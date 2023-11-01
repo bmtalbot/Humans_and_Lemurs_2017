@@ -1,0 +1,89 @@
+X	record_id.x	Sample_ID	Sample_Type	unique_ID	Age	Relationship	anon_vill	Sample_Type2
+26	26	HUM0493	sample_num_human_1	26_1	34	3	Vil 3	HUMAN
+38	38	HUM0579	sample_num_human_1	38_1	35	3	Vil 8	HUMAN
+43	43	HUM0609	sample_num_human_1	43_1	54	3	Vil 8	HUMAN
+59	59	HUM0738	sample_num_human_1	59_1	24	1	Vil 2	HUMAN
+71	71	HUM0668	sample_num_human_1	71_1	18	3	Vil 8	HUMAN
+86	86	HUM0812	sample_num_human_1	86_1	30	3	Vil 2	HUMAN
+88	88	HUM0825	sample_num_human_1	88_1	24	3	Vil 2	HUMAN
+89	89	HUM0829	sample_num_human_1	89_1	25	3	Vil 2	HUMAN
+161	166	HUM0846	sample_num_human_1	166_1	34	3	Vil 6	HUMAN
+162	167	HUM0847	sample_num_human_1	167_1	38	3	Vil 6	HUMAN
+163	168	HUM0854	sample_num_human_1	168_1	49	4	Vil 6	HUMAN
+166	171	HUM0865	sample_num_human_1	171_1	75	NA	Vil 6	HUMAN
+177	182	HUM0894	sample_num_human_1	182_1	47	5	Vil 6	HUMAN
+205	210	HUM1014	sample_num_human_1	210_1	46	5	Vil 4	HUMAN
+250	42	HUM0603	sample_num_human_2	42_2	31	3	Vil 8	HUMAN
+253	45	HUM0624	sample_num_human_2	45_2	29	3	Vil 8	HUMAN
+267	59	HUM0739	sample_num_human_2	59_2	4	NA	Vil 2	HUMAN
+269	61	HUM0749	sample_num_human_2	61_2	22	3	Vil 2	HUMAN
+271	63	HUM0756	sample_num_human_2	63_2	32	3	Vil 2	HUMAN
+275	69	HUM0775	sample_num_human_2	69_2	8	2	Vil 2	HUMAN
+280	74	HUM0681	sample_num_human_2	74_2	15	3	Vil 8	HUMAN
+295	89	HUM0830	sample_num_human_2	89_2	8	2	Vil 2	HUMAN
+303	98	HUM0038	sample_num_human_2	98_2	32	3	Vil 1	HUMAN
+325	124	HUM0148	sample_num_human_2	124_2	29	3	Vil 1	HUMAN
+363	167	HUM0848	sample_num_human_2	167_2	35	3	Vil 6	HUMAN
+373	178	HUM0887	sample_num_human_2	178_2	53	9	Vil 6	HUMAN
+384	191	HUM0929	sample_num_human_2	191_2	38	3	Vil 5	HUMAN
+386	193	HUM0941	sample_num_human_2	193_2	38	5	Vil 5	HUMAN
+414	7	HUM0439	sample_num_human_3	7_3	4	NA	Vil 3	HUMAN
+416	9	HUM0546	sample_num_human_3	9_3	22	3	Vil 8	HUMAN
+431	26	HUM0495	sample_num_human_3	26_3	8	NA	Vil 3	HUMAN
+439	38	HUM0581	sample_num_human_3	38_3	12	NA	Vil 8	HUMAN
+440	39	HUM0587	sample_num_human_3	39_3	10	2	Vil 8	HUMAN
+443	42	HUM0604	sample_num_human_3	42_3	15	3	Vil 8	HUMAN
+459	62	HUM0752	sample_num_human_3	62_3	9	2	Vil 2	HUMAN
+507	124	HUM0149	sample_num_human_3	124_3	8	NA	Vil 1	HUMAN
+531	154	HUM0322	sample_num_human_3	154_3	18	3	Vil 7	HUMAN
+553	182	HUM0896	sample_num_human_3	182_3	11	2	Vil 6	HUMAN
+554	183	HUM0902	sample_num_human_3	183_3	7	NA	Vil 6	HUMAN
+572	204	HUM0991	sample_num_human_3	204_3	25	5	Vil 4	HUMAN
+602	26	HUM0496	sample_num_human_4	26_4	3	NA	Vil 3	HUMAN
+606	38	HUM0582	sample_num_human_4	38_4	6	NA	Vil 8	HUMAN
+619	59	HUM0741	sample_num_human_4	59_4	9	2	Vil 2	HUMAN
+637	86	HUM0815	sample_num_human_4	86_4	7	2	Vil 2	HUMAN
+690	165	HUM0844	sample_num_human_4	165_4	14	NA	Vil 6	HUMAN
+699	191	HUM0931	sample_num_human_4	191_4	7	NA	Vil 5	HUMAN
+707	204	HUM0992	sample_num_human_4	204_4	10	3	Vil 4	HUMAN
+710	210	HUM1017	sample_num_human_4	210_4	10	2	Vil 4	HUMAN
+731	38	HUM0583	sample_num_human_5	38_5	3	NA	Vil 8	HUMAN
+747	73	HUM0678	sample_num_human_5	73_5	6	NA	Vil 8	HUMAN
+754	86	HUM0816	sample_num_human_5	86_5	4	NA	Vil 2	HUMAN
+760	98	HUM0041	sample_num_human_5	98_5	5	NA	Vil 1	HUMAN
+788	154	HUM0324	sample_num_human_5	154_5	12	NA	Vil 7	HUMAN
+797	167	HUM0851	sample_num_human_5	167_5	12	2	Vil 6	HUMAN
+800	182	HUM0898	sample_num_human_5	182_5	4	2	Vil 6	HUMAN
+802	191	HUM0932	sample_num_human_5	191_5	4	NA	Vil 5	HUMAN
+819	7	HUM0442	sample_num_human_6	7_6	37	3	Vil 3	HUMAN
+830	42	HUM0607	sample_num_human_6	42_6	4	NA	Vil 8	HUMAN
+848	98	HUM0042	sample_num_human_6	98_6	4	NA	Vil 1	HUMAN
+855	124	HUM0152	sample_num_human_6	124_6	1	NA	Vil 1	HUMAN
+877	182	HUM0899	sample_num_human_6	182_6	18	5	Vil 6	HUMAN
+884	204	HUM0994	sample_num_human_6	204_6	2.5	2	Vil 4	HUMAN
+887	210	HUM1019	sample_num_human_6	210_6	3	NA	Vil 4	HUMAN
+902	65	HUM0767	sample_num_human_7	65_7	62	10	Vil 2	HUMAN
+928	167	HUM0853	sample_num_human_7	167_7	1	NA	Vil 6	HUMAN
+929	193	HUM0946	sample_num_human_7	193_7	6	NA	Vil 5	HUMAN
+934	7	HUM0444	sample_num_human_8	7_8	7	NA	Vil 3	HUMAN
+954	193	HUM0947	sample_num_human_8	193_8	3	NA	Vil 5	HUMAN
+956	7	HUM0444	sample_num_human_8.1	7_8.1	NA	NA	Vil 3	HUMAN
+976	193	HUM0947	sample_num_human_8.1	193_8.1	NA	NA	Vil 5	HUMAN
+979	139	HUM0232	sample_num_human_10	139_10	25	NA	Vil 7	HUMAN
+982	154	HUM0329	sample_num_human_10	154_10	0.83	NA	Vil 7	HUMAN
+985	139	HUM0233	sample_num_human_11	139_11	9	3	Vil 7	HUMAN
+991	139	HUM0235	sample_num_human_13	139_13	4	NA	Vil 7	HUMAN
+NA	NA	LMR0004			NA	NA	Lemur	LEMUR
+NA	NA	LMR0005			NA	NA	Lemur	LEMUR
+NA	NA	LMR0006			NA	NA	Lemur	LEMUR
+NA	NA	LMR0007			NA	NA	Lemur	LEMUR
+NA	NA	LMR0008			NA	NA	Lemur	LEMUR
+NA	NA	LMR0009			NA	NA	Lemur	LEMUR
+NA	NA	LMR0011			NA	NA	Lemur	LEMUR
+NA	NA	LMR0012			NA	NA	Lemur	LEMUR
+NA	NA	LMR0013			NA	NA	Lemur	LEMUR
+NA	NA	LMR0017			NA	NA	Lemur	LEMUR
+NA	NA	LMR0021			NA	NA	Lemur	LEMUR
+NA	NA	LMR0022			NA	NA	Lemur	LEMUR
+NA	NA	LMR0023			NA	NA	Lemur	LEMUR
+NA	NA	LMR0024			NA	NA	Lemur	LEMUR
