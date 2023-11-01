@@ -1,0 +1,2361 @@
+---
+title: "ARGs in Humans and Lemurs in Rural Madagascar"
+author: "Brooke Talbot"
+output: word_document
+---
+
+# Version of Code
+This code is maintained by Brooke M. Talbot. This is Version 1.0 updated last on 11/1/2023
+
+# R Libraries and set up ##
+These analyses were conducted using R version 4.0.4
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(tibble)
+library(dplyr)
+library(ggplot2)
+library(cowplot)
+library(RColorBrewer)
+library(vegan)
+library(cowplot)
+library(ggsignif)
+library(gggenes)
+```
+
+
+# Data Table Import and Cleaning
+## Epidemiology Survey (Supplemental Table 1)
+
+```{r}
+## Cleaned up from the raw Epi Survey data cut from RedCap and anonymized, transposed into a line list by the Human Sample ID
+
+human_survey <- read.table("Supplemental_1.tsv", header = TRUE, sep = "\t")
+
+
+
+## Table of all of the human and lemur records with a sample associated with them 
+
+human_and_lemurs <- read.table("Supplemental_9", 
+                       header = TRUE, sep = "\t" )
+
+
+```
+
+## Quality Control Review
+
+Host DNA from both humans and lemurs were removed, along with tandem repeats and adaptor sequences using Kneaddata and Bowtie2. Samples were assessed using fastqc and multiqc. Samples were excluded from the final analysis if they had fewer than 1 million reads, did not pass initial sequencing or kneaddata quality checks.   
+```{r}
+excluded_samples <- c("HUM0232","HUM0439","HUM0442","HUM0496","HUM0741","HUM0812","HUM0815","HUM0929","HUM0932","HUM0941",
+                                       "HUM0947","HUM0991","HUM0992","HUM1017","HUM1019","LMR0006", "LMR0005", "LMR0013")
+
+## This is the finalize list of the humans and lemurs going into the read analysis and should be carried foward through the Metaphlan4 analysis and the gene abundances 
+humans_and_lemurs2 <- human_and_lemurs %>% filter(!(Sample_ID %in% excluded_samples)) %>% filter(!(unique_ID %in% "7_8.1"))
+
+```
+
+## Supplemental Data 3 - Metaphlan 4 Results 
+```{r}
+
+## Creates a table that is the relative abundances for each of the samples 
+all_profiled <- read.table("Supplemental_3.txt", header = T, sep = "\t")
+
+# Cleans up the names
+bug_dat_4 <- all_profiled
+colnames(bug_dat_4)[1] <- "cladeName"
+colnames(bug_dat_4)[2] <- "cladeTaxa"
+names(bug_dat_4) = gsub(pattern = "new_", replacement = "", x = names(bug_dat_4))
+names(bug_dat_4) = gsub(pattern = "_.*", replacement = "", x = names(bug_dat_4))
+bug_dat_4 <- bug_dat_4 %>% select(-cladeTaxa)
+
+## Filters down to the species level of bacteria
+spec_dat <- bug_dat_4 %>% filter(grepl("\\|s", cladeName)) %>% 
+  separate(cladeName,into=c("k", "p","c","o","f","g","s","t"), sep="\\|") %>%
+  filter(is.na(t)) %>% 
+  filter(!is.na(s)) %>%
+  filter(grepl("Bacteria", k))
+
+## Kingdom Counts
+
+king_dat <- bug_dat_4 %>% 
+  #separate(clade,into=c("k", "p","c","o","f","g","s"), sep="\\|") %>%
+  filter(!grepl("\\|", cladeName )) %>% 
+  filter(!grepl("unclassified", cladeName))
+
+king_dat_T = king_dat %>% 
+  column_to_rownames("cladeName") %>% 
+  t()
+
+king_dat_T <- as.data.frame(king_dat_T)
+king_dat_T<- tibble::rownames_to_column(king_dat_T, "SampleID")
+king_dat_T <- king_dat_T %>% mutate(Source = case_when(grepl("HUM",SampleID) ~ "Human", grepl("LMR", SampleID) ~ "Lemur"))
+king_dat_T <- king_dat_T %>% filter(!(SampleID %in% excluded_samples))
+
+## Phyla counts
+## Kingdom Counts
+
+phyla_dat <- bug_dat_4 %>% 
+  separate(cladeName,into=c("k", "p","c","o","f","g","s"), sep="\\|") %>%
+  filter(is.na(c)) %>% 
+  filter(!is.na(p)) %>%
+  filter(grepl("Bacteria", k))
+
+phyla_dat_T = phyla_dat %>% 
+  select(-k,-c,-o,-f, -g, -s) %>%
+  column_to_rownames("p") %>% 
+  t()
+
+phyla_dat_T<- as.data.frame(phyla_dat_T)
+phyla_dat_T <- tibble::rownames_to_column(phyla_dat_T, "SampleID")
+phyla_dat_T <- phyla_dat_T %>% mutate(Source = case_when(grepl("HUM",SampleID) ~ "Human", grepl("LMR", SampleID) ~ "Lemur"))
+phyla_dat_T <- phyla_dat_T %>% filter(!(SampleID %in% excluded_samples))
+
+
+## QC on keeping abundance values to better quantify the number of detected species: 
+## Taxonomic abundances are passed through a basic filter requiring each species or genus to have at least 0.01 % abundance in at least 10 % of all samples.
+
+
+spec_dat2 <- spec_dat %>% select(-k, -p,-c,-o,-f,-g,-t)
+spec_dat2 <- spec_dat2 %>% select(-HUM0439,-HUM0442,-HUM0496,-HUM0741,-HUM0812,-HUM0929,-HUM0932,-HUM0941,
+                                        -HUM0991,-HUM0992,-HUM1017,-HUM1019,-LMR0006)
+
+#Data cleaning to make the Taxonomy Table sample names match the metadata sample names
+
+colnames(spec_dat2) <- sub("_taxonomic_profile", "", colnames(spec_dat2))
+library(tibble)
+spec_dat_T = spec_dat2 %>%
+  remove_rownames() %>%
+  column_to_rownames("s") %>% 
+  t() 
+
+spec_data_t <- as.data.frame(spec_dat_T) %>% rownames_to_column("Sample_ID")
+
+##Seed for M species matrix
+## Logical matrix that identifies which species are >0.01 in abundance
+M <- spec_data_t
+rownames(M) <- M[,1]
+M <- M[,-1]
+M <- as.matrix(M)
+M[] <- ifelse(M>=0.01,1,0)
+
+x <- as.data.frame(colSums(M))
+
+hist(x$`colSums(M)`)
+## Most species are very rare within a single individual ##
+
+
+## Total number of\pecies with at least 1 sample at 0.01 abundace
+Total_Species <- x %>% filter(`colSums(M)` > 0)
+length(Total_Species$`colSums(M)`)
+
+## Total number of species after filtering on the parameters - 7 being ~10% of the present samples 
+Total_Species_Filtered <- Total_Species %>% filter(`colSums(M)` >= 7)
+length(Total_Species_Filtered$`colSums(M)`)
+
+Total_Species_Filtered_list <- rownames(Total_Species_Filtered)
+
+## Filtered Abundance Table by Species 
+ 
+spec_data_t2 <- spec_data_t
+rownames(spec_data_t2) <- spec_data_t2[,1]
+spec_data_t2 <- subset(spec_data_t2, select = c(Total_Species_Filtered_list))
+
+
+
+```
+
+
+## Supplemental Table 4 - Creation of the KMA-Kraken-RPKM Table
+## KMA data
+```{r}
+
+## KMA Can give you the 
+KMA_tables <- read.table("~/MADAMR/kma_output/all_kma_numerators_raw.tab", header = TRUE, comment.char = "$", sep ='\t', quote = "", fill = TRUE)
+
+KMA_tables <- KMA_tables %>% 
+  mutate(across(
+    everything(),
+    ~ map_chr(.x, ~ gsub("\"", "", .x))
+  ))
+
+colnames(KMA_tables)[1] <- "SAMPLE_ID"
+
+## WORKING WITH JUST THE KNEADDATA READS ##
+## FILTER OUT THE SEQUENCES THAT DID NOT HAVE RESULTS FROM KMA, WHICH ALSO CORRESPOND WITH THE <1,000,000bp
+## LMR0006, LMR0007, HUM0232, 439, 442, 496, 741, 812,815,929,932,941,947,991,992,1017,1019
+
+## FILTER OUT THE HEADERS, the excluded sequences  ##
+KMA_tables$SAMPLE_ID <- str_remove(KMA_tables$SAMPLE_ID,"_.*")
+KMA_tables <- KMA_tables %>% filter(!(X.Template %in% c("#Template","# refSequence", "Template"))) %>%  filter(!(SAMPLE_ID %in% excluded_samples)) %>% filter(!(Score %in% ""))
+
+
+## TO CALCULATE THE AMR RPKM ##
+
+KMA_tables <- KMA_tables %>%  mutate(template_length_kb = as.numeric(Template_length)/1000)
+
+
+```
+
+## Kraken data
+```{r}
+bacteria_kraken_table <- read.table("~/MADAMR/kraken2_results/all_kraken_bacteria.tab", header = FALSE, comment.char = "$", sep ='\t', fill = TRUE)
+
+colnames(bacteria_kraken_table)[1] <- "SAMPLE_ID"
+colnames(bacteria_kraken_table)[2] <- "percent_rooted_reads"
+colnames(bacteria_kraken_table)[3] <- "number_rooted_reads"
+colnames(bacteria_kraken_table)[4] <- "number_taxon_reads"
+colnames(bacteria_kraken_table)[5] <- "taxon_rank"
+colnames(bacteria_kraken_table)[6] <- "taxon_symbol"
+colnames(bacteria_kraken_table)[7] <- "taxon"
+
+bacteria_kraken_table$SAMPLE_ID <- str_remove(bacteria_kraken_table$SAMPLE_ID,"_.*")
+bacteria_kraken_table2 <- bacteria_kraken_table %>% filter(taxon_symbol == 2)
+
+
+
+```
+## Relative Abundance
+```{r}
+
+abundance_table <- left_join(KMA_tables, bacteria_kraken_table2, by = "SAMPLE_ID")
+
+abundance_table <- abundance_table %>% separate(X.Template, into = c("code1", "code2", "code3", "num1","num2","Gene_Symbol","Gene_symbol2","description"), sep = "\\|")
+
+## Filter out the virulence references, keep only AMR genes ##
+refgenes <- read.csv("~/MADAMR/refgenes.csv")
+refgenes_AMR <- refgenes %>% filter(Type == "AMR")
+
+abundance_table <- abundance_table %>% filter(code3 %in% refgenes_AMR$RefSeq.nucleotide)
+
+
+## Write out the Final Table ## 
+#write.csv(abundance_table, "Supplemental_Table_4.csv")
+
+```
+## Supplemental Table 4 - Abundance and RPKM output
+```{r}
+## Uncomment to read in supplemental table 4 ##
+
+#abundance_table <- read.table("Supplemental_4.csv", header = FALSE, comment.char = "$", sep =',', fill = TRUE)
+
+
+```
+
+## Supplemental 8 - MultiQC Data
+```{r}
+
+## Count number of reads in each sample type:
+total_reads <- read.table("Supplemental_8.txt", sep = "\t", header = TRUE)
+
+total_reads$Sample <- gsub("_.*","",total_reads$Sample)
+total_reads <- total_reads %>% filter(!(Sample %in% excluded_samples))
+total_reads$SumReads = total_reads$FastQC_mqc.generalstats.fastqc.total_sequences*2
+total_reads_paired <- total_reads %>% select(Sample, SumReads) %>% unique()
+
+total_reads_paired <- total_reads_paired %>% mutate(Source = ifelse(grepl("HUM", Sample), "Human", "Lemur"))
+
+
+```
+
+## Supplemental Data 5 - AMR Finder Output from Assemblies 
+```{r}
+AMRFinder <- read.csv("Supplemental_5.csv", header = TRUE)
+##coverage refers to the longest kmer coverage##
+  
+## FILTER ONLY CONTIGS THAT ARE AT LEAST 1000 BP IN LENGTH ##
+AMRFinder_1000 <- AMRFinder %>% separate(Contig.id, c("NODE", "NODE_NUM", "LENGTH", "Contig_length", "COV", "Coverage"), sep = "_", remove = FALSE) %>% select(-NODE, -LENGTH, -COV) %>%
+  filter(as.numeric(Contig_length) >= 1000)
+AMRFinder_1000$Sample_ID_match <- gsub("amrf_output","", AMRFinder_1000$Sample_ID)
+AMRFinder_1000$Sample_ID <- gsub("_.*","",AMRFinder_1000$Sample_ID)
+AMRFinder_1000$Contig_length <- as.numeric(AMRFinder_1000$Contig_length)
+
+## Examining the distribution of the kmer coverage/depth, which might not be necessary but good to know
+hist(as.numeric(AMRFinder_1000$Coverage), breaks = 50)
+mean(as.numeric(AMRFinder_1000$Coverage))
+median(as.numeric(AMRFinder_1000$Coverage))
+
+
+## unique AMRFinder contigs for each sample
+AMRFinder_1000 %>% select(Sample_ID_match, Contig.id) %>% unique() %>% write.table(row.names = FALSE, sep = "\t", col.names = TRUE, quote = FALSE, "~/MADAMR/AMRFinder_1000_unique_contigs.tab")
+
+AMRFinder_1000$Contig.id[duplicated(AMRFinder_1000$Contig.id)]
+## All of the contig IDs are unique between samples. There is no reason a loop can't be run on the contigs with the risk of extracting a contig without an AMR hit
+
+```
+
+
+# Results 
+
+## Table 1 - Quantification of Reads, Kingdoms, and What are the bacterial species abundances between humans and lemurs? 
+```{r}
+library(vegan)
+library(ggplot2)
+
+## Count number of reads per sample
+
+total_reads_paired %>% group_by(Source) %>% summarise( count = n(), mean = mean(SumReads), 
+                                              sd = sd(SumReads), 
+                                              median = median(SumReads), 
+                                              Q1 = quantile(SumReads,probs = 0.25),
+                                              Q3 = quantile(SumReads,probs = 0.75),
+                                              stderr = (sd(SumReads)/sqrt(length((SumReads)))))
+
+## Histogram to look at distribution
+hist(total_reads_paired$SumReads)
+
+## Variance test
+var.test(SumReads ~ Source, data = total_reads_paired, conf.level = 0.95)
+#There is not significant difference between the variance of the two sets of data. 
+
+# Test for normality
+#library(car)
+shapiro.test(total_reads_paired$SumReads)
+## The p value is at 0.013, which means that the data are not normally distributed
+
+# t test to compare average number of Reads
+t.test(SumReads ~ Source, data = total_reads_paired)
+wilcox.test(SumReads ~ Source, data = total_reads_paired)
+## both values are less than 0.05 suggesting there is a significant difference in the number of total reads between the two sample sets
+
+
+
+## Notably, there are more reads in the lemur dataset even after removal of potential lemur DNA
+ggplot(data = total_reads_paired, aes(x = Source, y = SumReads)) + geom_boxplot()
+
+
+## Count number of species per sample/abundance per sample
+
+spec_data_t2
+spec_data_t2<- rownames_to_column(spec_data_t2, "SAMPLE_ID")
+
+## Bar Plot of Abundances
+spec_data_t2 %>% 
+  gather("Species","Abundance",2:441) %>%
+  ggplot(aes(x = SAMPLE_ID, y = Abundance, fill = Species)) + geom_bar(stat = "identity") + 
+  theme(panel.background = element_blank(), legend.position = "none", axis.text.x = element_text(angle = 45))
+
+king_dat_T %>%
+  gather("kingdom", "abundance",2:5) %>%
+  ggplot(aes(x = Source, y = abundance, fill = kingdom )) + 
+  geom_boxplot() +
+  labs(y = "Relative Abundance", )
+  theme(panel.background = element_blank(), 
+        axis.title.x = element_text("Relative"))
+  
+  
+ phyla_dat_T %>%
+  relocate(Source, .after = SampleID) %>%
+  gather("phyla", "abundance",3:16) %>%
+  ggplot(aes(x = Source, y = abundance, fill = phyla )) + 
+  geom_boxplot() +
+  labs(y = "Relative Abundance", )
+  theme(panel.background = element_blank(), 
+        axis.title.x = element_text("Relative"))
+        
+phyla_dat_T %>%
+  relocate(Source, .after = SampleID) %>%
+  gather("phyla", "abundance",3:16) %>%
+  mutate(phyla_new = gsub("p__","",phyla)) %>%
+  mutate(phyla_new = gsub("_"," ",phyla_new)) %>%
+  ggplot(aes(x = Source , y = abundance, fill = reorder(phyla_new, -abundance))) + 
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(y = "Relative Abundance (Per ", fill = "Phylum") + 
+  theme(panel.background = element_blank(), 
+        axis.title.x = element_text("Relative"), 
+        axis.text.x = element_text(angle = 45))
+
+#### PRINT THIS ONE ###
+phyla_dat_T %>%
+  relocate(Source, .after = SampleID) %>%
+  gather("phyla", "abundance",3:16) %>%
+  mutate(phyla_new = gsub("p__","",phyla)) %>%
+  mutate(phyla_new = gsub("_"," ",phyla_new)) %>%
+  ggplot(aes(x = SampleID , y = abundance, group = Source, fill = reorder(phyla_new, -abundance))) + 
+  geom_bar(stat = "identity") +
+  labs(x = "Sample", y = "Relative Abundance (Percent)", fill = "Phylum") + 
+  facet_grid(. ~ Source,  scales = "free", space = "free") +  
+  theme(panel.background = element_blank(), 
+        axis.text.x = element_blank(), 
+        axis.ticks.x = element_blank())
+
+```  
+
+```{r}  
+library(dplyr)
+
+## summary of human Taxon abundance ##
+king_dat_T %>%
+  gather("kingdom", "abundance",2:5) %>%
+  subset(Source == "Human") %>%
+  summary(abundance)
+
+## summary of lemur Taxon abundance ##
+king_dat_T %>%
+  gather("kingdom", "abundance",2:5) %>%
+  subset(Source == "Lemur") %>%
+  summary(abundance)
+
+## Average Abundances at the kingdom taxon level
+z<- king_dat_T %>%
+  gather("kingdom", "abundance",2:5) %>%
+  group_by(Source, kingdom) %>%
+  summarise_at(vars(abundance), list(name = mean))
+
+## Let's compare 1 by 1 the kingdom groups to one another ##
+
+bacteria <- king_dat_T %>%
+  gather("kingdom", "abundance",2:5) %>%
+  group_by(Source, kingdom) %>%
+  filter(kingdom == "k__Bacteria")
+
+bacteria %>% group_by(Source) %>% summarise( count = n(), mean = mean(abundance), 
+                                              sd = sd(abundance), 
+                                              median = median(abundance), 
+                                              Q1 = quantile(abundance,probs = 0.25),
+                                              Q3 = quantile(abundance,probs = 0.75),
+                                              stderr = (sd(abundance)/sqrt(length((abundance)))))
+
+ wilcox.test(as.numeric(abundance) ~ Source, data = bacteria, exact = FALSE)
+  
+archaea <- king_dat_T %>%
+  gather("kingdom", "abundance",2:5) %>%
+  group_by(Source, kingdom) %>%
+  filter(kingdom == "k__Archaea")
+
+archaea %>% group_by(Source) %>% summarise( count = n(), mean = mean(abundance), 
+                                              sd = sd(abundance), 
+                                              median = median(abundance), 
+                                              Q1 = quantile(abundance,probs = 0.25),
+                                              Q3 = quantile(abundance,probs = 0.75),
+                                              stderr = (sd(abundance)/sqrt(length((abundance)))))
+
+ wilcox.test(as.numeric(abundance) ~ Source, data = bacteria, exact = FALSE)
+  
+
+euykaryota <- bacteria <- king_dat_T %>%
+  gather("kingdom", "abundance",2:5) %>%
+  group_by(Source, kingdom) %>%
+  filter(kingdom == "k__Eukaryota")
+
+euykaryota  %>% group_by(Source) %>% summarise( count = n(), mean = mean(abundance), 
+                                              sd = sd(abundance), 
+                                              median = median(abundance), 
+                                              Q1 = quantile(abundance,probs = 0.25),
+                                              Q3 = quantile(abundance,probs = 0.75),
+                                              stderr = (sd(abundance)/sqrt(length((abundance)))))
+
+wilcox.test(as.numeric(abundance) ~ Source, data = euykaryota , exact = FALSE)
+  
+
+unclassified <- king_dat_T %>%
+  gather("kingdom", "abundance",2:5) %>%
+  group_by(Source, kingdom) %>%
+  filter(kingdom == "UNCLASSIFIED")
+
+unclassified %>% group_by(Source) %>% summarise( count = n(), mean = mean(abundance), 
+                                              sd = sd(abundance), 
+                                              median = median(abundance), 
+                                              Q1 = quantile(abundance,probs = 0.25),
+                                              Q3 = quantile(abundance,probs = 0.75),
+                                              stderr = (sd(abundance)/sqrt(length((abundance)))))
+
+
+wilcox.test(as.numeric(abundance) ~ Source, data = unclassified, exact = FALSE)
+
+
+## Count number of species per sample, then get the average per sample ##
+
+spec_data_tcount <- spec_data_t2
+rownames(spec_data_tcount) <- spec_data_tcount[,1]
+spec_data_tcount <- spec_data_tcount[,-1]
+spec_data_tcount <- as.matrix(spec_data_tcount)
+spec_data_tcount[] <- ifelse(spec_data_tcount>0,1,0)
+
+## convert back to a dataframe and summarize the number of species per sample
+spec_count <- as.data.frame(spec_data_tcount)
+spec_count <- rownames_to_column(spec_count, "Sample_ID") 
+
+## counts up the number of species detected for each sample ##
+spec_count <- spec_count %>% rowwise() %>%
+mutate(sumSpecies = sum(across(starts_with("s__")), na.rm = T))
+spec_count$Source <- ifelse(grepl("HUM",spec_count$Sample_ID),"Human","Lemur")
+
+spec_count %>% group_by(Source)  %>% summarise( count = n(), mean = mean(sumSpecies), 
+                                              sd = sd(sumSpecies), 
+                                              median = median(sumSpecies), 
+                                              Q1 = quantile(sumSpecies,probs = 0.25),
+                                              Q3 = quantile(sumSpecies,probs = 0.75),
+                                              stderr = (sd(sumSpecies)/sqrt(length((sumSpecies)))))
+wilcox.test(as.numeric(sumSpecies) ~ Source, data = spec_count, exact = FALSE)
+
+```
+
+## Counting species Species
+
+```{r}
+
+##use spec_data_tcount, which has already
+
+## sum the columns, and they should be = 61
+
+##Seed for M species matrix
+M_frame <- as.data.frame(M)
+rowSums(M_frame[,c(1:1319)])
+
+V <- as.data.frame(colSums(M_frame[,c(1:1319)]))
+V<- V %>% mutate(percent = (V$`colSums(M_frame[, c(1:1319)])`/68) * 100)
+
+median(V$percent)
+max(V$percent)
+
+hist(V$percent)
+
+spec_data_tcount_df <- as.data.frame(spec_data_tcount)
+species_colsum <- colSums(spec_data_tcount[,c(1:440)])
+species_row_pct <- 
+
+
+```
+
+
+## Shannon diversity of the species
+
+```{r}
+## From the Vegan package, a way to calculate the shannon and simpson diversity ## 
+
+# spec_data_t$ShannonD <- diversity(spec_count, "shannon")
+# H <- diversity()
+# simp <- diversity(BCI, "simpson")
+
+MARGIN = 2
+## Calculates the Shannon Index for Each humans
+shannon_human <- spec_data_t %>% filter(grepl("HUM",Sample_ID)) 
+human_SD <- diversity(shannon_human[,2:396])
+human <- c(rep("HUMAN",57))
+human_SD <- as.data.frame(cbind(human, human_SD))
+colnames(human_SD)[1] <- "Source"
+colnames(human_SD)[2] <- "Shannon"
+
+## Calculates the Shannon Index for each lemur
+shannon_lemur <- spec_data_t %>% filter(grepl("LMR",Sample_ID)) 
+lemur_SD <- diversity(shannon_lemur[,2:396])
+lemur <- c(rep("LEMUR",11))
+lemur_SD <- as.data.frame(cbind(lemur, lemur_SD))
+colnames(lemur_SD)[1] <- "Source"
+colnames(lemur_SD)[2] <- "Shannon"
+
+species_SI <- rbind(human_SD, lemur_SD)
+
+## Both are significant
+t.test(as.numeric(Shannon) ~ Source, species_SI)
+wilcox.test(as.numeric(Shannon) ~ Source, species_SI)
+
+
+ggplot(species_SI, aes(x = Source, y = as.numeric(Shannon), fill = Source)) + 
+  geom_boxplot() + 
+  scale_fill_manual(values = c("#3c0d94","#eba21a")) + 
+  labs(x = "Source", y = "Shannon Index of Species") + 
+    geom_signif(
+   comparisons = list(c("HUMAN", "LEMUR")),
+    map_signif_level = TRUE) + 
+  theme(panel.background = element_blank(), 
+        panel.grid.major = element_line(colour = "grey89"),
+        plot.title = element_text(hjust = 0.5, face = "bold"),
+        axis.text.x = element_text(angle = 45, hjust = 0.9),
+        legend.background = element_rect(fill = "white"), legend.position = "none", 
+        legend.key = element_rect(fill = "white")) 
+  
+
+```
+
+## Chao1 Diversity of the Species
+```{r}
+library(vegan)
+
+##Making estimates based on the summarized counts versus the abundances?
+
+
+M_frame 
+M_frame2 <- rownames_to_column(M_frame, "SAMPLE")
+M_frame2 <- M_frame2 %>% mutate(Source = ifelse(grepl("HUM",SAMPLE),"Human","Lemur"), .after = SAMPLE)
+M_frame3 <- gather(M_frame2, "SPECIES", "COUNT",3:1321)
+M_frame4 <- M_frame3 %>% select(Source, SPECIES, COUNT) %>% group_by(Source, SPECIES) %>% summarise(SUM = sum(COUNT))
+M_frame5 <- spread(M_frame4, Source, SUM)
+
+## shared species ##
+table_species_overlap <- M_frame5 %>% filter(Human > 0 & Lemur > 0)
+
+## among those that were detected in the >1% and among 10% of samples ##
+
+table_species_overlap2 <- table_species_overlap %>% filter(table_species_overlap$SPECIES %in% Total_Species_Filtered_list) 
+
+## table of species correct ##
+M_frame6 <- M_frame5 %>% filter(M_frame5$SPECIES %in% Total_Species_Filtered_list) 
+###
+
+## The bottom 10% have not been filtered out for this analysis to capitalize on rare species estimates of Chao1 ##
+
+library(iNEXT)
+
+ChaoRichness(M_frame5[,c("Human","Lemur")])
+
+i.out <- iNEXT(as.data.frame(M_frame5[,c("Human","Lemur")]), q=0, datatype="abundance")
+
+
+library(ggplot2)
+chao_rare_species <- ggiNEXT(i.out,) + 
+  scale_color_manual(values = c("#3c0d94","#eba21a")) + 
+  scale_fill_manual(values = alpha(c("#3c0d94","#eba21a"), 0.5)) + 
+  theme(panel.background = element_blank(), 
+        panel.grid.major = element_line(colour = "grey89"),
+        plot.title = element_text(hjust = 0.5, face = "bold"),
+        axis.text.x = element_text(size = 8, angle = 45, hjust = 0.9),
+        axis.text.y = element_text(size = 8),
+        axis.title.x = element_text(size = 10, hjust = 0.5),
+        axis.title.y = element_text(size = 10),
+        legend.text = element_text(size = 8),
+        legend.box = "horizontal",
+        legend.key.size = unit(4,'mm'))
+
+
+```
+
+
+## Beta Diversity of the Species
+```{r}
+
+###
+spec_data_t2 <- arrange(spec_data_t2, SAMPLE_ID)
+spec_data_t2$SAMPLE_ID <- gsub("O","0",spec_data_t2$SAMPLE_ID)
+spec_mat <- spec_data_t2
+rownames(spec_mat) <- spec_mat[,1]
+spec_mat <- spec_mat[,-1]
+
+dist_mat_species = vegdist(spec_mat, binary = FALSE)
+
+cmd_res_spec = cmdscale(dist_mat_species, 
+                   k = (nrow(spec_mat) - 1),
+                   eig = TRUE)
+
+str(cmd_res_spec)
+
+#extracting coordinates from PC
+pcoa_df_spec = tibble(PC1_spec = cmd_res_spec$points[,1], 
+                 PC2_spec = cmd_res_spec$points[,2])
+
+p_spec = ggplot(pcoa_df_spec, aes(x = PC1_spec, y = PC2_spec)) + 
+  geom_point() 
+p_spec
+
+#column binding the metadata to the plot
+## Use Humans and Lemurs 3
+
+metadata2 <- humans_and_lemurs2 %>% select(Sample_ID, anon_vill,Sample_Type2) %>% filter(Sample_ID %in% spec_data_t2$SAMPLE_ID) %>% arrange(Sample_ID)
+
+pcoa_meta_spec = bind_cols(pcoa_df_spec, metadata2)
+library(ggforce)
+p_vill_spec = ggplot(pcoa_meta_spec,
+                aes(x = PC1_spec, y = PC2_spec, color = anon_vill)) + 
+  geom_point() +
+  geom_mark_ellipse(aes(label = anon_vill))+
+  labs(color = "Village Source", title = "Bray-Curtis PCA Plot of Metagenome Species Abundances") +
+  scale_color_brewer(palette = "Set3") +
+  theme_classic() 
+
+p_vill_spec
+
+
+
+```
+
+
+```{r}
+## Average number of unique AMR alleles (?) detected from the reads alone ##
+
+
+KMA_count <- as.data.frame(table(abundance_table$SAMPLE_ID))
+
+KMA_count <- KMA_count %>% mutate(Source = ifelse(grepl("HUM", Var1), "Human", "Lemur"))
+
+KMA_count %>% group_by(Source) %>% summarise(count = n(), mean = mean(Freq), 
+                                              sd = sd(Freq))
+
+## Variance test
+var.test(Freq ~ Source, data = KMA_count, conf.level = 0.95)
+#There is significant difference between the variance of the two sets of data. Therefore, we can use the #classic t test which assume inequality of the two variances.
+
+# Test for normality
+#library(car)
+shapiro.test(KMA_count$Freq)
+## We reject that the values are normally distributed, so therefore we should use a parametric approach to compare these values 
+
+# t test to compare average number of AMR alleles
+wilcox.test(Freq ~ Source, data = KMA_count)
+## P value is >0.01, which suggests there is a significant difference in the number of amr alleles between the two groups 
+
+ggplot(data = KMA_count, aes(x = Source, y = Freq)) + geom_boxplot()
+
+
+```
+
+## What are the most common antibiotic resistance classes of genes detected in human and lemur samples 
+```{r}
+
+## From AMRFinder you can get the gene annotation, but from the reads, you can get a better sense of the abundance of those classes, so may want to use KMA
+
+AMRFinder_1000 <- AMRFinder_1000%>% filter(Coverage >= 2) %>% mutate(source = case_when(grepl("HUM", Sample_ID) ~ "Human", TRUE ~ "Lemur"))
+
+AMRFinder_1000 %>% group_by(Gene.symbol,source) %>% summarize(count = n()) %>% 
+  ## KEEP ONLY INTERSECT OF SOURCES ##
+  spread(source, count)%>%
+  filter(!is.na(Human)& !is.na(Lemur)) %>%
+  ## REGATHER
+  gather(Source, Count,2:3) %>%
+  ## PLOT THE COUNT OF GENES
+  ggplot(aes(x=Gene.symbol,y=Count, fill= Source)) + geom_bar(stat = "identity") +
+    theme(panel.background = element_blank(), 
+        panel.grid.major = element_line(colour = "grey89"),
+        plot.title = element_text(hjust = 0.5, face = "bold"),
+        axis.text.x = element_text(angle = 45),
+        legend.background = element_rect(fill = "white"), legend.position = "bottom", 
+        legend.key = element_rect(fill = "white")) 
+
+commongenes <- AMRFinder_1000 %>% group_by(Gene.symbol,source) %>% summarize(count = n()) %>% 
+  ## KEEP ONLY INTERSECT OF SOURCES ##
+  spread(source, count)%>%
+  filter(!is.na(Human)& !is.na(Lemur)) 
+
+## 1. Among Shared genes detected, what is their percent identity to the reference by source?
+
+AMRFinder_1000 %>% filter(Gene.symbol %in% commongenes$Gene.symbol) %>%
+  ggplot(aes(x=Gene.symbol,y=X..Identity.to.reference.sequence, color= source)) + geom_jitter() +#geom_point(position =position_dodge(width = 0.2)) +
+    theme(panel.background = element_blank(), 
+        panel.grid.major = element_line(colour = "grey89"),
+        plot.title = element_text(hjust = 0.5, face = "bold"),
+        axis.text.x = element_text(angle = 45),
+        legend.background = element_rect(fill = "white"), legend.position = "bottom", 
+        legend.key = element_rect(fill = "white")) 
+
+## HOW MANY HUMAN SAMPLES HAVE AT LEAST 1 AMR GENE
+length(unique(AMRFinder_1000$Sample_ID[AMRFinder_1000$source == "Human"],))
+
+## 52
+
+## HOW MANY LEMUR SAMPLES HAVE AT LEAST 1 AMR GENE
+length(unique(AMRFinder_1000$Sample_IS[AMRFinder_1000$source == "Lemur"],))
+
+## 8 
+
+
+```
+
+
+
+## Are there similarities in the distribution of AMR genes detected in samples between humans and lemurs
+
+```{r}
+
+## First get the relative abundance overall for the different 
+abundance_table$readCount <- as.numeric(abundance_table$readCount)
+abundance_table$Source <- ifelse(grepl("HUM",abundance_table$SAMPLE_ID), "Human","Lemur")
+RPKM <- abundance_table %>% group_by(SAMPLE_ID, Source) %>% summarise(sumTemplate = sum(template_length_kb), sumReads = sum(readCount), number_rooted_reads, RPKM = ((sum(readCount)/(sum(template_length_kb)*number_rooted_reads))*1000000000)) %>% unique()
+
+## First explore if there is a difference in the RPKM between humans and lemurs
+
+## Wilcoxon rank sum to compare
+wilcox.test(RPKM ~ Source, data = RPKM)
+
+##Interestingly, there is no significant difference in the RPKM of total antibiotic resistance genes between humans and lemurs 
+
+## If we stratify by gene class, however, what do we get?
+
+## 1 Merge the class table 
+RPKM_class <- left_join(abundance_table, refgenes_AMR, by = c("code3" = "RefSeq.nucleotide"))
+RPKM_class_sum <- RPKM_class %>% group_by(SAMPLE_ID, Class, Source) %>% summarise(sumTemplate = sum(template_length_kb), sumReads = sum(readCount), number_rooted_reads, RPKM = ((sum(readCount)/(sum(template_length_kb)*number_rooted_reads))*1000000000)) %>% unique()
+
+## for overall
+RPKM_amrtotal_sum <- RPKM_class %>% group_by(SAMPLE_ID, Source) %>% summarise(sumTemplate = sum(template_length_kb), sumReads = sum(readCount), number_rooted_reads, RPKM = ((sum(readCount)/(sum(template_length_kb)*number_rooted_reads))*1000000000)) %>% unique()
+
+
+
+
+```
+
+## Shannon diversity of the AMR Genes
+
+```{r}
+## From the Vegan package, a way to calculate the shannon and simpson diversity ## 
+
+## Prepping the Antibiotic Resistance Abundances matrix by calculating RPKM per allele
+abundance_table$allele <- paste(abundance_table$Gene_Symbol,"_",abundance_table$code3)
+
+## Adding in the RPKM value
+abundance_table <- abundance_table %>% mutate(RPKM = ((sum(readCount)/(sum(template_length_kb)*number_rooted_reads))*1000000000))
+
+abundance_table_t <- abundance_table %>% select(SAMPLE_ID, allele, RPKM) %>% spread(allele,RPKM) %>% replace(is.na(.), 0)
+
+MARGIN = 2
+## Calculates the Shannon Index for Each humans
+shannon_amr_human <- abundance_table_t %>% filter(grepl("HUM",SAMPLE_ID)) 
+human_amr_SD <- diversity(shannon_amr_human[,2:204])
+human_amr <- c(rep("HUMAN",57))
+human_amr_SD <- as.data.frame(cbind(human_amr, human_amr_SD))
+colnames(human_amr_SD)[1] <- "Source"
+colnames(human_amr_SD)[2] <- "Shannon"
+
+## Calculates the Shannon Index for each lemur
+shannon_amr_lemur <- spec_data_t %>% filter(grepl("LMR",Sample_ID)) 
+lemur_amr_SD <- diversity(shannon_lemur[,2:204])
+lemur_amr <- c(rep("LEMUR",11))
+lemur_amr_SD <- as.data.frame(cbind(lemur_amr, lemur_amr_SD))
+colnames(lemur_amr_SD)[1] <- "Source"
+colnames(lemur_amr_SD)[2] <- "Shannon"
+
+AMR_SI <- rbind(human_amr_SD, lemur_amr_SD)
+
+## Both are significant
+t.test(as.numeric(Shannon) ~ Source, AMR_SI)
+wilcox.test(as.numeric(Shannon) ~ Source, AMR_SI)
+
+
+ggplot(AMR_SI, aes(x = Source, y = as.numeric(Shannon), fill = Source)) + 
+  geom_boxplot() + 
+  scale_fill_manual(values = c("#3c0d94","#eba21a")) + 
+  labs(x = "Source", y = "Shannon Index of AMR Alleles") + 
+    geom_signif(
+   comparisons = list(c("HUMAN", "LEMUR")),
+    map_signif_level = TRUE) + 
+  theme(panel.background = element_blank(), 
+        panel.grid.major = element_line(colour = "grey89"),
+        plot.title = element_text(hjust = 0.5, face = "bold"),
+        axis.text.x = element_text(angle = 45, hjust = 0.9),
+        legend.background = element_rect(fill = "white"), legend.position = "none", 
+        legend.key = element_rect(fill = "white")) 
+  
+
+```
+
+## Chao1 Diversity of AMR Genes
+
+```{r}
+
+
+abundance_table_t
+
+
+AMR <- abundance_table_t
+rownames(AMR) <- AMR[,1]
+AMR <- AMR[,-1]
+AMR <- as.matrix(AMR)
+AMR[] <- ifelse(AMR>=0.01,1,0)
+
+AMR_frame <- as.data.frame(AMR)
+AMR_frame2 <- rownames_to_column(AMR_frame, "SAMPLE")
+AMR_frame2 <- AMR_frame2 %>% mutate(Source = ifelse(grepl("HUM",SAMPLE),"Human","Lemur"), .after = SAMPLE)
+AMR_frame3 <- gather(AMR_frame2, "SPECIES", "COUNT",3:273)
+AMR_frame4 <- AMR_frame3 %>% select(Source, SPECIES, COUNT) %>% group_by(Source, SPECIES) %>% summarise(SUM = sum(COUNT))
+AMR_frame5 <- spread(AMR_frame4, Source, SUM)
+
+AMR_frame5 %>% filter(Lemur > 0) #154
+AMR_frame5 %>% filter(Human > 0) #144
+
+ChaoRichness(AMR_frame5[,c("Human","Lemur")])
+
+i.out_AMR <- iNEXT(as.data.frame(AMR_frame5[,c("Human","Lemur")]), q=0, datatype="abundance")
+
+
+
+library(ggplot2)
+Chao_rare_AMR <- ggiNEXT(i.out_AMR,) + 
+  scale_color_manual(values = c("#3c0d94","#eba21a")) + 
+  scale_fill_manual(values = alpha(c("#3c0d94","#eba21a"), 0.5)) + 
+  theme(panel.background = element_blank(), 
+        panel.grid.major = element_line(colour = "grey89"),
+        plot.title = element_text(hjust = 0.5, face = "bold"),
+        axis.text.x = element_text(size = 8, angle = 45, hjust = 0.9),
+        axis.text.y = element_text(size = 8),
+        axis.title.x = element_text(size = 10, hjust = 0.5),
+        axis.title.y = element_text(size = 10),
+        legend.text = element_text(size = 8),
+        legend.box = "horizontal",
+        legend.key.size = unit(4,'mm'))
+
+
+```
+
+## Beta diversity (PCA plot) for the AMR genes 
+```{r}
+
+## Distance Matrix for the Genes Present in the reads ## 
+library(vegan)
+amr_gene_mat <- abundance_table %>% group_by(SAMPLE_ID, Gene_Symbol) %>% 
+  summarise(RPKM = ((sum(readCount)/(sum(template_length_kb)*number_rooted_reads))*1000000000)) %>% unique()
+
+
+amr_gene_mat <- spread(Gene_Symbol, RPKM, data = amr_gene_mat, fill = 0)
+amr_gene_mat$SAMPLE_ID <- gsub("O","0",amr_gene_mat$SAMPLE_ID)
+
+
+
+## Making matrix
+amr_gene_mat2 <- column_to_rownames(amr_gene_mat,"SAMPLE_ID")
+
+###
+amr_dist_mat = vegdist(amr_gene_mat2, binary = FALSE)
+
+amr_cmd_res = cmdscale(amr_dist_mat, 
+                   k = (nrow(amr_gene_mat2) - 1),
+                   eig = TRUE)
+
+str(amr_cmd_res)
+
+#extracting coordinates from PC
+pcoa_df = tibble(PC1 = amr_cmd_res$points[,1], 
+                 PC2 = amr_cmd_res$points[,2])
+
+p = ggplot(pcoa_df, aes(x = PC1, y = PC2)) + 
+  geom_point()
+p
+
+#column binding the metadata to the plot
+## Source, Village 
+
+## ordering the metadata
+amr_gene_metadata <- human_and_lemurs %>% 
+  filter(Sample_ID %in% amr_gene_mat$SAMPLE_ID) %>%
+  filter(!(unique_ID %in% c("7_8.1")))
+amr_gene_metadata[order(amr_gene_metadata$Sample_ID), ]
+  
+
+pcoa_meta = bind_cols(pcoa_df, amr_gene_metadata)
+
+p_vill = ggplot(pcoa_meta,
+                aes(x = PC1, y = PC2, color = Village_name_correct.x)) + 
+  geom_point() +
+  labs(color = "Geographic Source", title = "Bray-Curtis PCA Plot of Metagenome AMR Gene Abundances") +
+  scale_color_brewer(palette = "Set3") +
+  theme_classic() 
+
+p_vill
+
+
+```
+
+## Exploratory Figures
+```{r}
+
+## Bar Graph of the RPKM values per class 
+
+RPKM_percent <- RPKM_class_sum %>% ungroup() %>% 
+  select(SAMPLE_ID, Class, RPKM) %>% 
+  spread(Class, RPKM) %>%
+  replace(is.na(.), 0) 
+RPKM_percent$Class_denom <- rowSums(RPKM_percent[,2:16])
+
+RPKM_percent_t <- RPKM_percent %>% gather(Class,"RPKM", 2:16) %>% mutate(Class_percent = RPKM/Class_denom) %>% mutate(Source = case_when(grepl("HUM",SAMPLE_ID) ~ "Human", grepl("LMR", SAMPLE_ID) ~ "Lemur")) %>%
+  ##filtering the classes where there were less than 10% of samples had at least 1% of the class
+
+  mutate(class_grouped = ifelse(Class %in% c("FUCIDIC ACID","STREPTOTHRICIN","LINCOSAMIDE","PHENICOL/QUINOLONE","PLEUROMUTILIN","QUINOLONE"), "Other Class", str_to_title(Class)))
+
+
+## Relative Abundance per sample of the Antibiotic Class representation by RPKM/Total RPKM 
+RPKM_percent_t %>% ggplot(aes(x = SAMPLE_ID, y = Class_percent, fill = reorder(class_grouped, -Class_percent))) + geom_bar(stat = "identity") +
+  #scale_fill_manual(values = c("#3c0d94","#eba21a")) + 
+  labs(x = "Sample ") + 
+  labs(x = "Sample", y = "Relative Abundance (Percent)", fill = "Antibiotic Class") + 
+  facet_grid(. ~ Source,  scales = "free", space = "free") +  
+  theme(panel.background = element_blank(), 
+        axis.text.x = element_blank(), 
+        axis.ticks.x = element_blank())
+
+```
+
+## Table 2 - Create a Table For the Class Abundances compared to one another
+```{r}
+## Is the average RPKM per class different between Humans and Lemurs?)
+
+##total
+RPKM_amrtotal_sum %>% group_by(Source) %>% summarise(mean = mean(RPKM), median(RPKM), count = n(), stderr = (sd(RPKM)/sqrt(length((RPKM)))), lowrange = quantile(RPKM, 0.25), highrange = quantile(RPKM, 0.75))
+wilcox.test(RPKM ~ Source, RPKM_amrtotal_sum)
+
+
+RPKM_amrtotal_sum  %>% ggplot(aes( x = Source, y = RPKM)) +  geom_boxplot()
+
+
+
+A <- RPKM_class_sum %>% filter(Class %in% "AMINOGLYCOSIDE") %>% ungroup()
+A %>% group_by(Source) %>% summarise(mean = mean(RPKM), median = median(RPKM), count = n(), stderr = (sd(RPKM)/sqrt(length((RPKM)))),lowrange = quantile(RPKM, 0.25), highrange = quantile(RPKM, 0.75))
+wilcox.test(RPKM ~ Source, data = A)
+
+B <- RPKM_class_sum %>% filter(Class %in% "BETA-LACTAM") %>% ungroup()
+wilcox.test(RPKM ~ Source, data = B)
+
+B %>% group_by(Source) %>% summarise(mean = mean(RPKM), medain = median(RPKM), count = n(),stderr = (sd(RPKM)/sqrt(length((RPKM)))), lowrange = quantile(RPKM, 0.25), highrange = quantile(RPKM, 0.75))
+
+FOS <- RPKM_class_sum %>% filter(Class %in% "FOSFOMYCIN") %>% ungroup()
+wilcox.test(RPKM ~ Source, data = FOS)
+FOS %>% group_by(Source) %>% summarise(mean = mean(RPKM), median = median(RPKM), count = n(),stderr = (sd(RPKM)/sqrt(length((RPKM)))), lowrange = quantile(RPKM, 0.25), highrange = quantile(RPKM, 0.75))
+
+FUS <- A <- RPKM_class_sum %>% filter(Class %in% "FUSIDIC ACID") %>% ungroup()
+#wilcox.test(RPKM ~ Source, data = FUS)
+FUS %>% group_by(Source) %>% summarise(mean = mean(RPKM), count = n(), stderr = (sd(RPKM)/sqrt(length((RPKM)))))
+
+GLY <- A <- RPKM_class_sum %>% filter(Class %in% "GLYCOPEPTIDE") %>% ungroup()
+wilcox.test(RPKM ~ Source, data = GLY)
+GLY %>% group_by(Source) %>% summarise(mean = mean(RPKM), count = n(), stderr = (sd(RPKM)/sqrt(length((RPKM)))))
+
+LS <- RPKM_class_sum %>% filter(Class %in% "LINCOSAMIDE/STREPTOGRAMIN") %>% ungroup()
+wilcox.test(RPKM ~ Source, data = LS) 
+LS %>% group_by(Source) %>% summarise(mean = mean(RPKM), median = median(RPKM), count = n(), stderr = (sd(RPKM)/sqrt(length((RPKM)))), lowrange = quantile(RPKM, 0.25), highrange = quantile(RPKM, 0.75))
+
+Ma <- RPKM_class_sum %>% filter(Class %in% "MACROLIDE") %>% ungroup()
+wilcox.test(RPKM ~ Source, data = Ma) 
+Ma %>% group_by(Source) %>% summarise(mean = mean(RPKM), median = median(RPKM), count = n(),stderr = (sd(RPKM)/sqrt(length((RPKM)))), lowrange = quantile(RPKM, 0.25), highrange = quantile(RPKM, 0.75))
+
+PH <- RPKM_class_sum %>% filter(Class %in% "PHENICOL") %>% ungroup()
+wilcox.test(RPKM ~ Source, data = PH) 
+PH %>% group_by(Source) %>% summarise(mean = mean(RPKM), median = median(RPKM), count = n(), stderr = (sd(RPKM)/sqrt(length((RPKM)))), lowrange = quantile(RPKM, 0.25), highrange = quantile(RPKM, 0.75))
+
+PQ <- RPKM_class_sum %>% filter(Class %in% "PHENICOL/QUINOLONE") %>% ungroup()
+#wilcox.test(RPKM ~ Source, data = PQ) 
+PQ %>% group_by(Source) %>% summarise(mean = mean(RPKM), count = n())
+
+PL <- RPKM_class_sum %>% filter(Class %in% "PLEUROMUTILIN") %>% ungroup()
+#wilcox.test(RPKM ~ Source, data = PL) 
+PL %>% group_by(Source) %>% summarise(mean = mean(RPKM), count = n())
+
+QU <- RPKM_class_sum %>% filter(Class %in% "QUINOLONE") %>% ungroup()
+#wilcox.test(RPKM ~ Source, data = PL) 
+
+QU %>% group_by(Source) %>% summarise(mean = mean(RPKM), count = n())
+
+
+STR <- RPKM_class_sum %>% filter(Class %in% "STREPTOTHRICIN") %>% ungroup()
+#wilcox.test(RPKM ~ Source, data = STR) 
+STR %>% group_by(Source) %>% summarise(mean = mean(RPKM), count = n())
+
+SUL <- RPKM_class_sum %>% filter(Class %in% "SULFONAMIDE") %>% ungroup()
+wilcox.test(RPKM ~ Source, data = SUL) 
+SUL %>% group_by(Source) %>% summarise(mean = mean(RPKM), median = median(RPKM), count = n(),stderr = (sd(RPKM)/sqrt(length((RPKM)))), lowrange = quantile(RPKM, 0.25), highrange = quantile(RPKM, 0.75))
+
+TET <- RPKM_class_sum %>% filter(Class %in% "TETRACYCLINE") %>% ungroup()
+wilcox.test(RPKM ~ Source, data = TET)
+TET %>% group_by(Source) %>% summarise(mean = mean(RPKM), median = median(RPKM), count = n(),stderr = (sd(RPKM)/sqrt(length((RPKM)))), lowrange = quantile(RPKM, 0.25), highrange = quantile(RPKM, 0.75))
+
+
+TRI <- RPKM_class_sum %>% filter(Class %in% "TRIMETHOPRIM") %>% ungroup()
+wilcox.test(RPKM ~ Source, data = TRI) 
+TRI %>% group_by(Source) %>% summarise(mean = mean(RPKM), median = median(RPKM), count = n(),stderr = (sd(RPKM)/sqrt(length((RPKM)))), lowrange = quantile(RPKM, 0.25), highrange = quantile(RPKM, 0.75))
+
+
+```
+
+
+## Table 3 - Do humans with a recent PCR + for a bacterial infection have higher burden of antibiotic resistance genes?
+```{r}
+
+
+##What we can do is look at the abundance of the different alleles, and look at the alpha and beta 
+## Link the epi data to the bacterial data, and indicate PCR Positivity
+
+
+RPKM$SAMPLE_ID2 <- sub("O","0",RPKM$SAMPLE_ID)
+RPKM_meta <- left_join(RPKM, human_survey, by = c("SAMPLE_ID2" = "Sample_ID"))  
+RPKM_meta <- RPKM_meta %>% mutate(PCR_pos = ifelse(Pathogen1+Pathogen2+Pathogen3+Pathogen4 >0,1,0)) %>%
+              mutate(PCR_sum = Pathogen1 + Pathogen2 + Pathogen3 + Pathogen4)
+RPKM_meta <- RPKM_meta %>% filter(Source == "Human")
+
+## Making a dataset that include the samples which did not ultimately have any AMR detected, but were still analyzed. 
+
+RPKM_meta_and_no_hits <- left_join(humans_and_lemurs2, RPKM, by = c("Sample_ID" = "SAMPLE_ID2")) %>%
+  mutate(RPKM_adjusted = ifelse(is.na(RPKM), 0, RPKM))
+RPKM_meta_and_no_hits2 <- left_join(RPKM_meta_and_no_hits, (human_survey %>% select(2,6:23)),by = "Sample_ID")
+
+RPKM_meta_and_no_hits_humans <- RPKM_meta_and_no_hits2 %>% filter(Sample_Type2 %in% "HUMAN") %>% mutate(PCR_pos = ifelse(Pathogen1+Pathogen2+Pathogen3+Pathogen4 >0,1,0)) %>%
+              mutate(PCR_sum = Pathogen1 + Pathogen2 + Pathogen3 + Pathogen4)
+
+## Logistic regressions 
+
+## Possible factors to control for: 1. Village, 2. Actively have diarrhea, 3. type of pathogen, 4. how many PCR positive pathogens 
+
+## Raw comparison before controlling for additional factors ** nead to look into this
+model <- glm(PCR_pos ~ RPKM_adjusted, data = RPKM_meta_and_no_hits_humans, family = "binomial")
+summary(model)
+
+##Is there a difference in average RPKM between those with a PCR positive, and those without?
+## Variance test
+var.test(RPKM_adjusted ~ PCR_pos, data = RPKM_meta_and_no_hits_humans, conf.level = 0.95)
+#There is a significant difference between the variance of the two sets of data. 
+
+# Test for normality
+shapiro.test(RPKM_meta_and_no_hits_humans$RPKM_adjusted)
+## The p value is <0.01, which means that this distribution is not normally distributed. Consider a wilcoxon rank sum test for comparison
+wilcox.test(RPKM_adjusted ~ PCR_pos, RPKM_meta_and_no_hits_humans)
+## The P value is not significant and suggests that raw, there is non significant difference between the average RPKM between those with and without a PCR positive result
+
+ggplot(RPKM_meta_and_no_hits_humans, aes(x = as.factor(PCR_pos), y = RPKM_adjusted)) + geom_boxplot()
+
+## I don't think the data set is large enought to detect a statistical pattern across the villages 
+ggplot(RPKM_meta_and_no_hits_humans, aes(x = as.factor(PCR_pos), y = RPKM_adjusted, color = anon_vill)) + geom_boxplot()
+
+```
+
+## Table 3 - What factors might be associated with higher RPKM
+```{r}
+
+## Total average
+mean(RPKM_meta_and_no_hits_humans$RPKM_adjusted)
+sd(RPKM_meta_and_no_hits_humans$RPKM_adjusted)/sqrt(length((RPKM_meta_and_no_hits_humans$RPKM_adjusted)))
+
+## Village
+rpkmFact_Village <- RPKM_meta_and_no_hits_humans %>% group_by(anon_vill ) %>% summarise(mean = mean(RPKM_adjusted), count = n(), sd = sd(RPKM_adjusted), stderr = (sd(RPKM_adjusted)/sqrt(length((RPKM_adjusted)))))
+
+kruskal.test(RPKM_adjusted ~ anon_vill, RPKM_meta_and_no_hits_humans)
+
+
+##Age Group
+rpkmFact_ageGroup<- RPKM_meta_and_no_hits_humans %>% mutate(ageGroup = case_when(Age < 5 ~ "Under 5", Age >= 5 & Age <10 ~ "Age 5-9", Age >= 10 & Age < 18 ~ "Age 10-17", Age >= 18 & Age <30 ~ "Age 18 - 29", Age >= 30 & Age <40 ~ "Age 30-39", Age >= 40 & Age < 50 ~ "Age 40-49", Age >= 50 ~ "Age 50+")) %>% group_by(ageGroup) %>% summarise(mean = mean(RPKM_adjusted), count = n(), sd = sd(RPKM_adjusted), stderr = (sd(RPKM_adjusted)/sqrt(length((RPKM_adjusted)))))
+
+RPKM_meta_and_no_hits_humans <-  RPKM_meta_and_no_hits_humans %>% mutate(ageGroup = case_when(Age < 5 ~ "Under 5", Age >= 5 & Age <10 ~ "Age 5-9", Age >= 10 & Age < 18 ~ "Age 10-17", Age >= 18 & Age <30 ~ "Age 18 - 29", Age >= 30 & Age <40 ~ "Age 30-39", Age >= 40 & Age < 50 ~ "Age 40-49", Age >= 50 ~ "Age 50+")) 
+
+kruskal.test(RPKM_adjusted ~ ageGroup, RPKM_meta_and_no_hits_humans)
+
+
+## PCR Positivity
+rpkmFact_PCRpos <- RPKM_meta_and_no_hits_humans %>% group_by(PCR_pos) %>% summarise(mean = mean(RPKM_adjusted), count = n(), sd = sd(RPKM_adjusted), stderr = (sd(RPKM_adjusted)/sqrt(length((RPKM_adjusted)))))
+
+wilcox.test(RPKM_adjusted ~ PCR_pos, RPKM_meta_and_no_hits_humans)
+
+## Pathogen Dx
+rpkmFact_PathogenSum <- RPKM_meta_and_no_hits_humans %>%
+mutate(PathSum = case_when(PCR_sum == 0 ~ "0", PCR_sum == 1~ "1", PCR_sum >= 2 ~"2+")) %>%
+  group_by(PathSum) %>% summarise(mean = mean(RPKM_adjusted), count = n(), sd = sd(RPKM_adjusted), stderr = (sd(RPKM_adjusted)/sqrt(length((RPKM_adjusted)))))
+
+XX <- RPKM_meta_and_no_hits_humans %>%
+mutate(PathSum = case_when(PCR_sum == 0 ~ "0", PCR_sum == 1~ "1", PCR_sum >= 2 ~"2+"), )
+
+  kruskal.test(RPKM_adjusted ~ PathSum, XX)
+
+##Sex
+rpkmFact_Sex <- RPKM_meta_and_no_hits_humans %>% group_by(sex) %>% summarise(mean = mean(RPKM_adjusted), count = n(), sd = sd(RPKM_adjusted), stderr = (sd(RPKM_adjusted)/sqrt(length((RPKM_adjusted)))))
+wilcox.test(RPKM_adjusted ~ sex, RPKM_meta_and_no_hits_humans)
+
+
+
+## Contact Wild Lemurs
+rpkmFact_wildlemurs <- RPKM_meta_and_no_hits_humans %>% group_by(contact_wild_lemurs) %>% summarise(mean = mean(RPKM_adjusted), count = n(), sd = sd(RPKM_adjusted), stderr = (sd(RPKM_adjusted)/sqrt(length((RPKM_adjusted)))))
+
+wilcox.test(RPKM_adjusted ~ contact_wild_lemurs, RPKM_meta_and_no_hits_humans)
+
+
+## Keep Domesticated Animals
+rpkmFact_domAnimals <- RPKM_meta_and_no_hits_humans %>% group_by(keep_dom_animals) %>% summarise(mean = mean(RPKM_adjusted), count = n(), sd = sd(RPKM_adjusted),stderr = (sd(RPKM_adjusted)/sqrt(length((RPKM_adjusted)))))
+
+wilcox.test(RPKM_adjusted ~ keep_dom_animals, RPKM_meta_and_no_hits_humans)
+
+
+```
+
+
+#Antibiotic Resistance Genes Structure and Similarity
+
+## Do humans and lemurs share highly conserved antibiotic genes?
+
+```{r}
+AMRFinder_1000$Source <- ifelse(grepl("HUM",AMRFinder_1000$Sample_ID),"Human","Lemur")
+
+table_amrgenes <- as.data.frame(table(AMRFinder_1000$Gene.symbol, AMRFinder_1000$Source)) %>%
+  spread("Var2", "Freq", 2:3)
+
+## Table of the shared AMR Genes from AMRFinderPlus
+table_amrgenes %>% filter(Human > 0 & Lemur > 0)
+
+table_amrgenes_overlap <- table_amrgenes %>% filter(Human > 0 & Lemur > 0)
+
+## Creates a line list of all of the samples and nodes that had an ARG which was detected in both humans and lemurs
+amr_genes_overlap_ll <- AMRFinder_1000 %>% filter(AMRFinder_1000$Gene.symbol %in% table_amrgenes_overlap$Var1)
+
+## prints a line list of all of the sample names 
+print(cat(unique(amr_genes_overlap_ll$Sample_ID_match),sep = "\n"), quote = FALSE)
+
+
+```
+
+## Supplemental Data 6 -  Do shared antibiotic resistance genes exist on potential mobile genetic elements?
+```{r}
+
+## Annotate all of the shared contigs with Bakta ##
+
+## bringing in a list of a concatonated bakta annotation file
+bakta_results <- read.table("Supplemental_6.tab", header = TRUE, comment.char = "$", sep ='\t', quote = "", fill = TRUE)
+
+## Joining the Sample ID values 
+bakta_results <- left_join(bakta_results, (AMRFinder_1000 %>% select(Contig.id, Sample_ID, Source)), by = c("X.Sequence.Id" = "Contig.id"))
+
+## Make 14 tables, each containing the nodes for each gene of interest ## 
+table_amrgenes_overlap
+
+aadA1 <- bakta_results %>% filter(X.Sequence.Id %in% bakta_results$X.Sequence.Id[bakta_results$Gene == "aadA1"])
+aph3Ib <- bakta_results %>% filter(X.Sequence.Id %in% bakta_results$X.Sequence.Id[bakta_results$Gene == "aph(3'')-Ib"])
+aph6Id <- bakta_results %>% filter(X.Sequence.Id %in% bakta_results$X.Sequence.Id[bakta_results$Gene == "aph(6)-Id"])
+blaTEM1 <- bakta_results %>% filter(X.Sequence.Id %in% bakta_results$X.Sequence.Id[bakta_results$Gene == "blaTEM-1"])
+cfxA6 <- bakta_results %>% filter(X.Sequence.Id %in% bakta_results$X.Sequence.Id[bakta_results$Gene == "cfxA6"])
+dfrA1 <- bakta_results %>% filter(X.Sequence.Id %in% bakta_results$X.Sequence.Id[bakta_results$Gene == "dfrA1"])
+#IsaD <- bakta_results %>% filter(X.Sequence.Id %in% bakta_results$X.Sequence.Id[bakta_results$Gene == "blaTEM-1"])
+qacEdelta1 <- bakta_results %>% filter(X.Sequence.Id %in% bakta_results$X.Sequence.Id[bakta_results$Gene == "qacEdelta1"])
+sul1 <- bakta_results %>% filter(X.Sequence.Id %in% bakta_results$X.Sequence.Id[bakta_results$Gene == "sul1"])
+sul2 <- bakta_results %>% filter(X.Sequence.Id %in% bakta_results$X.Sequence.Id[bakta_results$Gene == "sul2"])
+tetA <- bakta_results %>% filter(X.Sequence.Id %in% bakta_results$X.Sequence.Id[bakta_results$Gene == "tet(A)"])
+tetB <- bakta_results %>% filter(X.Sequence.Id %in% bakta_results$X.Sequence.Id[bakta_results$Gene == "tet(B)"])
+tetO <- bakta_results %>% filter(X.Sequence.Id %in% bakta_results$X.Sequence.Id[bakta_results$Gene == "tet(O)"])
+tetQ <- bakta_results %>% filter(X.Sequence.Id %in% bakta_results$X.Sequence.Id[bakta_results$Gene == "tet(Q)"])
+
+
+## prints a line list of all of the contigs
+amr_contigs <- print(cat(unique(amr_genes_overlap_ll$Contig.id),sep = "\n"), quote = FALSE)
+
+
+
+```
+
+# Blast similarity scores (Supplemental Data File 7)
+```{r}
+
+## AMR Genes Blast Hits 
+
+blastn_results <- read.table("Supplemental_7.txt", header = TRUE, comment.char = "$", sep ='\t', fill = TRUE)
+
+
+blastn_results <- blastn_results %>% separate(Query, c("QueryID","QueryGene"),sep=";")
+blastn_results <- blastn_results %>% separate(Hit, c("HitID","HitGene"),sep=";")
+
+##Here is where you link all of the IDs to the NODES
+
+blastn_results <- left_join(blastn_results, (amr_genes_overlap_ll%>% select(Contig.id, Sample_ID, Source)), by = c("QueryID" = "Contig.id")) %>% distinct()
+
+blastn_results <- left_join(blastn_results, (amr_genes_overlap_ll%>% select(Contig.id, Sample_ID, Source)), by = c("HitID" = "Contig.id")) %>% distinct() 
+
+colnames(blastn_results)[15] <- "Query_Sample"
+colnames(blastn_results)[16] <- "Query_Source"
+colnames(blastn_results)[17] <- "Hit_Sample"
+colnames(blastn_results)[18] <- "Hit_Source"
+
+
+##Here is where you filter out the same-same comparisons
+
+blastn_results_filtered <- blastn_results %>% filter(!(QueryID == HitID)) %>% filter(!(Query_Sample == Hit_Sample))
+
+##get rid of the duplicate comparisons
+
+
+blastn_results_filtered2 <- blastn_results_filtered %>% mutate(HitID2 = ifelse(QueryID > HitID,HitID, QueryID), .after = 1) %>%
+    mutate(QueryID2 = ifelse(QueryID > HitID,QueryID, HitID), .after = 1) %>% mutate(SampleID1 = ifelse(Query_Sample > Hit_Sample,Query_Sample, Hit_Sample), .after = 1) %>%
+  mutate(Gene1 = ifelse(QueryGene > HitGene,QueryGene, HitGene), .after = 1) %>%
+  mutate(Gene2 = ifelse(QueryGene > HitGene,HitGene, QueryGene), .after = 1) %>%
+    mutate(SampleID2 = ifelse(Query_Sample > Hit_Sample,Hit_Sample, Query_Sample), .after = 1) %>%
+      mutate(SampleID1 = ifelse(Query_Sample > Hit_Sample,Query_Sample, Hit_Sample), .after = 1) %>%
+        mutate(Source1 = ifelse(Query_Source > Hit_Source,Query_Source, Hit_Source), .after = 1) %>% 
+        mutate(Source2 = ifelse(Query_Source > Hit_Source,Hit_Source, Query_Source), .after = 1) %>% select(QueryID2, HitID2,Gene1,Gene2,SampleID1, SampleID2,Source1,Source2, Perc_ID) %>% unique()
+
+### Something wrong with the Percent_Identity measures being different here - talk to tim on Wed
+tetq <- blastn_results_filtered2 %>% filter(Gene1 == "tet(Q)")
+tetq2 <- blastn_results_filtered2 %>% filter(Gene1 == "tet(Q)") %>% select(-Perc_ID) %>% unique()
+
+#blastn_results_filtered2 %>% filter(blastn_results_filtered2$SampleID1 == blastn_results_filtered2$SampleID2)
+
+blastn_results_filtered2 <- blastn_results_filtered2 %>% mutate(pair = case_when(Source1 %in% c("Human") & Source2 %in% c("Human") ~ "Human-Human", Source1 %in% c("Lemur") & Source2 %in% c("Lemur") ~ "Lemur-Lemur", Source1 %in% c("Lemur") & Source2 %in% c("Human") ~ "Human-Lemur"))
+
+### Summary ####
+
+blastn_results_filtered2 %>% group_by(pair) %>% summarise(median = median(Perc_ID), Q1=quantile(Perc_ID, probs = 0.25), Q3=quantile(Perc_ID, probs = 0.75))
+
+pid1 <- ggplot(data = blastn_results_filtered2, aes(x = pair, y = Perc_ID, color = pair)) + geom_boxplot() +
+  #geom_jitter() + 
+  scale_color_manual(values = c("steelblue4", "steelblue3", "steelblue1")) + 
+  labs(y = "Percent Identity", x = "Source Pair", color = "Pair") + 
+  theme(panel.background = element_blank(), 
+        panel.grid.major = element_line(colour = "grey89"),
+        legend.position = "none")
+
+
+pid2 <- ggplot(data = blastn_results_filtered2, aes(x = pair, y = Perc_ID, color = pair)) + geom_boxplot() +
+  #geom_jitter() + 
+  scale_color_manual(values = c("steelblue4", "steelblue3", "steelblue1")) + 
+  labs(y = "Percent Identity", x = "Source Pair", color = "Source Pair") + 
+  guides(colour = guide_legend(title.position = "top", title.hjust = 0.5)) + 
+  facet_wrap(~Gene1) + 
+  theme(panel.background = element_blank(), 
+        panel.grid.major = element_line(colour = "grey89"),
+        axis.text.x = element_blank(),
+        axis.title = element_blank(),
+        legend.position = "right",
+        legend.box = "vertical", legend.margin=unit(-10,"cm"),
+        legend.key.size = unit(4,'mm'),
+        legend.text = element_text(size = 10),
+        legend.title = element_text(size = 12))
+
+plot_grid(pid1, shift_legend(pid2), labels="AUTO")
+
+## Possible this needs to be sorted out with a stratification test
+kruskal.test(Perc_ID ~ pair, blastn_results_filtered2)
+wilcox.test(Perc_ID ~ pair, blastn_results_filtered2[blastn_results_filtered2$pair %in% c("Human-Human", "Human-Lemur"),])
+wilcox.test(Perc_ID ~ pair, blastn_results_filtered2[blastn_results_filtered2$pair %in% c("Human-Human", "Lemur-Lemur"),])
+wilcox.test(Perc_ID ~ pair, blastn_results_filtered2[blastn_results_filtered2$pair %in% c("Human-Lemur", "Lemur-Lemur"),])
+
+## No TetQ ##
+
+kruskal.test(Perc_ID ~ pair, blastn_results_filtered2[!(blastn_results_filtered2$Gene1 %in% c("Tet(Q)")),])
+wt_blastn <- blastn_results_filtered2[!(blastn_results_filtered2$Gene1 %in% c("Tet(Q)")),]
+wilcox.test(Perc_ID ~ pair, wt_blastn[wt_blastn$pair %in% c("Human-Human", "Human-Lemur"),])
+wilcox.test(Perc_ID ~ pair, wt_blastn[wt_blastn$pair %in% c("Human-Human", "Lemur-Lemur"),])
+wilcox.test(Perc_ID ~ pair, wt_blastn[wt_blastn$pair %in% c("Human-Lemur", "Lemur-Lemur"),])
+
+## Interestingly, even with the Tet genes, the significance stays the same, but I'm not sure I am convinced by the small values ## 
+
+
+table1::table1(~ Perc_ID | pair, overall = F, data=blastn_results_filtered2, extra.col=list(`P-value*`=pvalue), topclass="Rtable1-zebra", output = "text", caption = "<h4><p style='text-align:left;'>Table S2. Demographics of Metagenomic subset versus Total sequenced population </h4></p>", footnote = "<p style='text-align:left;'>*P-values reflect results of two-tailed T-test or Fisher's Exact test </p>")
+
+table1::table1(~ Perc_ID | pair*Gene1, overall = T, data=blastn_results_filtered2, topclass="Rtable1-zebra", output = "text", caption = "<h4><p style='text-align:left;'>Table S2. Demographics of Metagenomic subset versus Total sequenced population </h4></p>", footnote = "<p style='text-align:left;'>*P-values reflect results of two-tailed T-test or Fisher's Exact test </p>")
+
+
+## Blast-Area Around the Genes but not the genes themselves ###
+
+amr_genes_overlap_ll <- amr_genes_overlap_ll %>% mutate(startflank = as.numeric(Start) - 1000) %>% mutate(endflank = as.numeric(Stop) + 1000)
+amr_genes_overlap_ll <- amr_genes_overlap_ll %>% mutate(include = case_when(startflank >= 0 & as.numeric(Contig_length) - endflank >= 0 ~ 1, TRUE ~ 0 ))
+
+amr_genes_overlap_ll <- amr_genes_overlap_ll %>% mutate(startflank_2000 = as.numeric(Start) - 2000) %>% mutate(endflank_2000 = as.numeric(Stop) + 2000)
+amr_genes_overlap_ll <- amr_genes_overlap_ll %>% mutate(include_2000 = case_when(startflank_2000 > 0 & as.numeric(Contig_length) - endflank_2000 > 0 ~ 1, TRUE ~ 0 ))
+amr_genes_overlap_ll$blastid <- paste(amr_genes_overlap_ll$Contig.id,amr_genes_overlap_ll$Gene.symbol,sep = ";")
+
+## produce a file that can be turned into bed files for extraction ##
+flankanalysis <- amr_genes_overlap_ll %>% filter(include == 1) %>% select(Sample_ID_match, Contig.id,startflank,endflank,blastid,Strand)
+
+write.table(flankanalysis, row.names = FALSE, sep = "\t", col.names = TRUE, quote = FALSE, "~/MADAMR/amr_flanks.tab")
+flanksamples <- flankanalysis %>% select(Sample_ID_match) %>% unique()
+write.table(flanksamples, row.names = FALSE, sep = "\t", col.names = TRUE, quote = FALSE, "~/MADAMR/amr_flank_samples.tab")
+
+blastedflanks <-  read.table("~/MADAMR/amr_alignments/synteny/AMR_blast_flank_nomask.out", header = FALSE, comment.char = "$", sep ='\t', fill = TRUE)
+
+
+## adding in the appropriate headers
+colnames(blastedflanks)[1] <- "Query"
+colnames(blastedflanks)[2] <- "Hit"
+colnames(blastedflanks)[3] <- "Perc_ID"
+colnames(blastedflanks)[4] <- "qlen"
+colnames(blastedflanks)[5] <- "lenght"
+colnames(blastedflanks)[6] <- "mismatch"
+colnames(blastedflanks)[7] <- "gapopen"
+colnames(blastedflanks)[8] <- "qstart"
+colnames(blastedflanks)[9] <- "qend"
+colnames(blastedflanks)[10] <- "sstart"
+colnames(blastedflanks)[11] <- "send"
+colnames(blastedflanks)[12] <- "evalue"
+
+blastedflanks <- blastedflanks %>% separate(Query, c("QueryID","QueryGene"),sep=";")
+blastedflanks <- blastedflanks %>% separate(Hit, c("HitID","HitGene"),sep=";")
+
+##Here is where you link all of the IDs to the NODES
+
+blastedflanks <- left_join(blastedflanks, (amr_genes_overlap_ll%>% select(Contig.id, Sample_ID, Source)), by = c("QueryID" = "Contig.id")) %>% distinct()
+
+blastedflanks <- left_join(blastedflanks, (amr_genes_overlap_ll%>% select(Contig.id, Sample_ID, Source)), by = c("HitID" = "Contig.id")) %>% distinct() 
+
+colnames(blastedflanks)[15] <- "Query_Sample"
+colnames(blastedflanks)[16] <- "Query_Source"
+colnames(blastedflanks)[17] <- "Hit_Sample"
+colnames(blastedflanks)[18] <- "Hit_Source"
+
+
+## Here is where I filter out unnecessary comparisons of gene areas to other gene areas ##
+
+blastedflanks_filtered <- blastedflanks %>% filter(QueryGene == HitGene)
+
+## here is where you order the comparisons so that they are in the same place ## 
+## I am looking to see which of the non-unique values across the sample query-sample pairings should be kept ##
+
+blastedflanks_filtered2 <- blastedflanks_filtered %>% mutate(HitID2 = ifelse(QueryID > HitID,HitID, QueryID), .after = 1) %>%
+    mutate(QueryID2 = ifelse(QueryID > HitID,QueryID, HitID), .after = 1) %>% mutate(SampleID1 = ifelse(Query_Sample > Hit_Sample,Query_Sample, Hit_Sample), .after = 1) %>%
+  mutate(Gene1 = ifelse(QueryGene > HitGene,QueryGene, HitGene), .after = 1) %>%
+  mutate(Gene2 = ifelse(QueryGene > HitGene,HitGene, QueryGene), .after = 1) %>%
+    mutate(SampleID2 = ifelse(Query_Sample > Hit_Sample,Hit_Sample, Query_Sample), .after = 1) %>%
+      mutate(SampleID1 = ifelse(Query_Sample > Hit_Sample,Query_Sample, Hit_Sample), .after = 1) %>%
+        mutate(Source1 = ifelse(Query_Source > Hit_Source,Query_Source, Hit_Source), .after = 1) %>% 
+        mutate(Source2 = ifelse(Query_Source > Hit_Source,Hit_Source, Query_Source), .after = 1) %>% select(QueryID2, HitID2,Gene1,Gene2,SampleID1, SampleID2,Source1,Source2, Perc_ID, 14:22)
+
+## HEre is where you filter out extraneous hits 
+blastedflanks_filtered3 <- blastedflanks_filtered2 %>% filter(lenght/qlen >= 0.9)
+
+##Here is where you filter out the same-same comparisons
+
+blastedflanks_filtered4 <- blastedflanks_filtered3 %>% filter(!(QueryID2 == HitID2)) %>% filter(!(SampleID1 == SampleID2)) %>% unique()
+
+
+blastedflanks_filtered4 <- blastedflanks_filtered4 %>% mutate(pair = case_when(Source1 %in% c("Human") & Source2 %in% c("Human") ~ "Human-Human", Source1 %in% c("Lemur") & Source2 %in% c("Lemur") ~ "Lemur-Lemur", Source1 %in% c("Lemur") & Source2 %in% c("Human") ~ "Human-Lemur"))
+
+pidflank1 <- ggplot(data = blastedflanks_filtered4, aes(x = pair, y = Perc_ID, color = pair)) + geom_boxplot() +
+  geom_jitter() + 
+  scale_color_manual(values = c("steelblue4", "steelblue3", "steelblue1")) + 
+  labs(y = "Percent Identity", x = "Source Pair", color = "Pair") + 
+  theme(panel.background = element_blank(), 
+        panel.grid.major = element_line(colour = "grey89"),
+        legend.position = "none")
+
+
+pidflank2 <- ggplot(data = blastedflanks_filtered4, aes(x = pair, y = Perc_ID, color = pair)) + geom_boxplot() +
+  geom_jitter() + 
+  scale_color_manual(values = c("steelblue4", "steelblue3", "steelblue1")) + 
+  labs(y = "Percent Identity", x = "Source Pair", color = "Source Pair") + 
+  guides(colour = guide_legend(title.position = "top", title.hjust = 0.5)) + 
+  facet_wrap(~Gene1) + 
+  theme(panel.background = element_blank(), 
+        panel.grid.major = element_line(colour = "grey89"),
+        axis.text.x = element_blank(),
+        axis.title = element_blank(),
+        legend.position = "right",
+        legend.box = "vertical", legend.margin=unit(-10,"cm"),
+        legend.key.size = unit(4,'mm'),
+        legend.text = element_text(size = 10),
+        legend.title = element_text(size = 12))
+
+
+plot_grid(pidflank1, shift_legend(pidflank2), labels="AUTO")
+
+
+## Figure 3?
+plot_grid(pid1, shift_legend(pid2), pidflank1, shift_legend(pidflank2), labels="auto")
+
+
+
+
+```
+
+```{r}
+## Function from Stack Overflow to get rid of the blank space: 
+
+library(gtable)
+library(cowplot)
+library(grid)
+
+shift_legend <- function(p){
+
+  # check if p is a valid object
+  if(!"gtable" %in% class(p)){
+    if("ggplot" %in% class(p)){
+      gp <- ggplotGrob(p) # convert to grob
+    } else {
+      message("This is neither a ggplot object nor a grob generated from ggplotGrob. Returning original plot.")
+      return(p)
+    }
+  } else {
+    gp <- p
+  }
+
+  # check for unfilled facet panels
+  facet.panels <- grep("^panel", gp[["layout"]][["name"]])
+  empty.facet.panels <- sapply(facet.panels, function(i) "zeroGrob" %in% class(gp[["grobs"]][[i]]))
+  empty.facet.panels <- facet.panels[empty.facet.panels]
+  if(length(empty.facet.panels) == 0){
+    message("There are no unfilled facet panels to shift legend into. Returning original plot.")
+    return(p)
+  }
+
+  # establish extent of unfilled facet panels (including any axis cells in between)
+  empty.facet.panels <- gp[["layout"]][empty.facet.panels, ]
+  empty.facet.panels <- list(min(empty.facet.panels[["t"]]), min(empty.facet.panels[["l"]]),
+                             max(empty.facet.panels[["b"]]), max(empty.facet.panels[["r"]]))
+  names(empty.facet.panels) <- c("t", "l", "b", "r")
+
+  # extract legend & copy over to location of unfilled facet panels
+  guide.grob <- which(gp[["layout"]][["name"]] == "guide-box")
+  if(length(guide.grob) == 0){
+    message("There is no legend present. Returning original plot.")
+    return(p)
+  }
+  gp <- gtable_add_grob(x = gp,
+                        grobs = gp[["grobs"]][[guide.grob]],
+                        t = empty.facet.panels[["t"]],
+                        l = empty.facet.panels[["l"]],
+                        b = empty.facet.panels[["b"]],
+                        r = empty.facet.panels[["r"]],
+                        name = "new-guide-box")
+
+  # squash the original guide box's row / column (whichever applicable)
+  # & empty its cell
+  guide.grob <- gp[["layout"]][guide.grob, ]
+  if(guide.grob[["l"]] == guide.grob[["r"]]){
+    gp <- gtable_squash_cols(gp, cols = guide.grob[["l"]])
+  }
+  if(guide.grob[["t"]] == guide.grob[["b"]]){
+    gp <- gtable_squash_rows(gp, rows = guide.grob[["t"]])
+  }
+  gp <- gtable_remove_grobs(gp, "guide-box")
+
+  return(gp)
+}
+
+
+
+```
+
+## Figure 3
+```{r}
+
+plot_grid(pid1, shift_legend(pid2), pidflank1, shift_legend(pidflank2), labels="auto")
+
+```
+
+
+
+# Figure 1
+## Diversity of the Bacterial Species
+
+```{r}
+
+## Data set 
+fig1A <- phyla_dat_T %>%
+  relocate(Source, .after = SampleID) %>%
+  mutate(Other_Phyla =  (100 - rowSums(.[3:16])) + p__Bacteria_unclassified) %>%
+  mutate(p__Other_Classified_Bacteria = p__Candidatus_Saccharibacteria + p__Deferribacteres + p__Verrucomicrobia) %>%
+  select(-p__Candidatus_Saccharibacteria,-p__Deferribacteres,-p__Verrucomicrobia, -p__Bacteria_unclassified) %>%
+  gather("phyla", "abundance",3:14) %>%
+  mutate(phyla_new = gsub("p__","",phyla)) %>%
+  mutate(phyla_new = gsub("_"," ",phyla_new ))
+
+## Order the Legend
+fig1A$phyla_new <- factor(fig1A$phyla_new, levels=c('Bacteroidetes','Firmicutes','Proteobacteria','Actinobacteria','Tenericutes','Spirochaetes','Candidatus Melainabacteria','Elusimicrobia','Lentisphaerae','Fusobacteria','Other Classified Bacteria','Other Phyla'))
+
+## Panel1 plot 
+Fig1A <- fig1A %>% ggplot(aes(x = SampleID , y = abundance, group = Source, fill = phyla_new)) + 
+  geom_bar(stat = "identity") +
+  scale_fill_brewer(palette = "Paired") + 
+  labs(y = "Relative Abundance (Percent)", fill = "Phylum") + 
+  facet_grid(. ~ Source,  scales = "free", space = "free") +  
+  theme(panel.background = element_blank(), 
+        axis.text.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        legend.position = "bottom",
+        legend.box = "horizontal", legend.margin=unit(-10,"cm"),
+        legend.key.size = unit(4,'mm'),
+        legend.text = element_text(size = 6.5),
+        legend.title = element_text(size = 8, angle = 90))
+
+
+Fig1A
+
+## B
+Fig1B <- ggplot(species_SI, aes(x = Source, y = as.numeric(Shannon), fill = Source)) + 
+  geom_boxplot() + 
+  scale_fill_manual(values = c("#3c0d94","#eba21a"), labels=c("Human","Lemur")) + 
+  scale_x_discrete(labels=c("Human","Lemur"))  + 
+  labs(x = "Source", y = "Shannon Index of Species") + 
+    geom_signif(
+   comparisons = list(c("HUMAN", "LEMUR")),
+    map_signif_level = TRUE) + 
+  theme(panel.background = element_blank(), 
+        panel.grid.major = element_line(colour = "grey89"),
+        plot.title = element_text(hjust = 0.5, face = "bold"),
+        axis.text.x = element_text(angle = 45, hjust = 0.9, size = 11),
+        legend.background = element_rect(fill = "white"), legend.position = "none", 
+        legend.key = element_rect(fill = "white")) 
+  
+library(ggforce)
+pcoa_meta_spec = bind_cols(pcoa_df_spec, metadata2)
+
+p_vill_spec = ggplot(pcoa_meta_spec,
+                aes(x = PC1_spec, y = PC2_spec, color = anon_vill)) + 
+  geom_point() +
+  geom_mark_ellipse(aes(label = anon_vill), label.fontsize = 7,
+label.buffer = unit(0, 'mm'),
+con.cap = 0) + 
+  labs(color = "Geographic Source", x= "PC1", y = "PC1") +
+  scale_color_brewer(palette = "Set3") +
+  theme(panel.background = element_blank(), 
+        axis.line = element_line())
+
+p_vill_spec
+
+Fig1C <- p_vill_spec
+
+
+Fig1D <- chao_rare_species
+
+
+
+Fig1 <- cowplot::plot_grid(Fig1A,Fig1B,Fig1C,Fig1D, nrow = 2, ncol = 2,rel_widths = c(0.9,0.75,0.9,0), rel_heights = c(0.75,0.5,0.9,0), labels = c("a","b","c","d"))
+
+Fig1
+
+ggsave("Fig1_dpi_1200.pdf", Fig1, height = 8, width = 15, dpi = 1200)
+
+
+
+```
+# Figure 2
+## Diversity of the ARGs
+
+```{r}
+
+## Relative Abundance per sample of the Antibiotic Class representation by RPKM/Total RPKM 
+Fig2A <- RPKM_percent_t %>% ggplot(aes(x = SAMPLE_ID, y = Class_percent, fill = reorder(class_grouped, -Class_percent))) + geom_bar(stat = "identity") +
+  scale_fill_brewer(palette = "Paired") + 
+  labs(x = "Sample ") + 
+  labs(x = "Sample", y = "Relative Abundance (Percent)", fill = "Antibiotic class") + 
+  facet_grid(. ~ Source,  scales = "free", space = "free") +  
+   theme(panel.background = element_blank(), 
+        axis.text.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        legend.position = "bottom",
+        legend.box = "horizontal", legend.margin=unit(-10,"cm"),
+        legend.key.size = unit(6,'mm'),
+        legend.text = element_text(size = 6.5),
+        legend.title = element_text(size = 8, angle = 90))
+
+
+
+t.test(as.numeric(Shannon) ~ Source, AMR_SI)
+wilcox.test(as.numeric(Shannon) ~ Source, AMR_SI)
+
+Fig2B <- ggplot(AMR_SI, aes(x = Source, y = as.numeric(Shannon), fill = Source)) + 
+  geom_boxplot() + 
+  scale_fill_manual(values = c("#3c0d94","#eba21a")) + 
+  labs(x = "Source", y = "Shannon Index") + 
+  scale_x_discrete(labels=c("Human","Lemur")) + 
+    geom_signif(
+   comparisons = list(c("HUMAN", "LEMUR")),
+    map_signif_level = TRUE) + 
+  theme(panel.background = element_blank(), 
+        plot.margin = unit(c(0,0,0,10),"mm"),
+        panel.grid.major = element_line(colour = "grey89"),
+        plot.title = element_text(hjust = 0.5, face = "bold"),
+        axis.text.x = element_text(angle = 45, hjust = 0.9),
+        legend.background = element_rect(fill = "white"), legend.position = "none", 
+        legend.key = element_rect(fill = "white")) 
+
+Fig2C <- ggplot(pcoa_meta,
+                aes(x = PC1, y = PC2, color = anon_vill)) + 
+  labs(x= "PC1", y = "PC1") + 
+  geom_point() +
+  scale_color_brewer(palette = "Set3") +
+geom_mark_ellipse(aes(label = anon_vill), label.fontsize = 7,
+label.buffer = unit(0, 'mm'),
+con.cap = 0) + 
+  labs(color = "Geographic Source") +
+  theme(panel.background = element_blank(), 
+        axis.line = element_line())
+
+Fig2D <- Chao_rare_AMR
+
+
+Fig2 <- cowplot::plot_grid(Fig2A,Fig2B,Fig2C,Fig2D, nrow = 2, ncol = 2,rel_widths = c(0.9,0.75,0.9,0), rel_heights = c(0.75,0.5,0.9,0), labels = c("a","b","c","d"))
+
+Fig2
+
+ggsave("Fig2_dpi_1200.pdf", Fig2, height = 8, width = 15, dpi = 1200)
+
+```
+
+
+
+# Among shared ARGs, is there evidence of a commone MGE? What is the synteny of all of the AMR Genes?
+
+## aadA1
+```{r}
+library(gggenes)
+
+## BRINGING IN A TABLE OF ALL OF THE INTEGRON ANNOTATIONS FROM BAKTA
+
+## FORMAT TABLE ##
+
+#Change first column
+colnames(aadA1)[1] <- "Contig_Name"
+
+#add in a sample ID 
+aadA1 <- aadA1 %>% mutate(sample_id = gsub("_.*","",Contig_Name))
+
+#create a variable to indicate directionality related to strand
+aadA1$direction <- ifelse(aadA1$Strand == "-", 0, 1)
+
+#renaming blanks to NA for value in variable Gene
+aadA1$Gene <- ifelse(aadA1$Gene == "", "NA", aadA1$Gene)
+
+## FACTORING TO MAKE NA LAST ON THE LIST ##
+#tablex$Gene <- factor(tablex$Gene, levels = c("aadA1","aph(3)-Ib" ,"aph(6)-Id","dfrA1","eAL","estX","intI1","istB",     "qacEdelta1","repA","spoIVCA","sul1","sul2","sulP","tniA","tniB","tnp","tnpA","tnpM","traX","xerD","yhbS","NA"))
+
+
+##GET MORE COLORS FOR THE NUMBER OF GENES
+colourCount = length(unique(aadA1$Gene))
+getPalette = colorRampPalette(brewer.pal(9, "Set3"))
+
+## DUMMY DATA TO ALIGN TO A SPECIFIC GENE ##
+dummies_aadA1 <- make_alignment_dummies(
+  aadA1,
+  aes(xmin =Start, xmax = Stop, y = Sample_ID, id = Gene),
+  on = "aadA1"
+)
+
+dummies_aadA1$direction <- -1
+
+## FINAL PLOT ##
+aadA1_plot <- ggplot(aadA1, aes(xmin = Start, xmax = Stop, y = Sample_ID, fill = Gene, forward = direction, label = Gene)) +
+  geom_gene_arrow() +
+  geom_gene_label(align = "left") +
+  geom_blank(data = dummies_aadA1) +
+  facet_wrap(~ Sample_ID, scales = "free", ncol = 1) +
+  scale_fill_manual(values = getPalette(colourCount)) +
+  theme_genes() +
+  labs(title = "aadA1-plot", y = "Sample") + 
+  theme(legend.position = "bottom")
+
+aadA1_plot
+
+```
+
+## aph3-Ib
+```{r}
+library(gggenes)
+
+## BRINGING IN A TABLE OF ALL OF THE INTEGRON ANNOTATIONS FROM BAKTA
+
+## FORMAT TABLE ##
+
+#Change first column
+colnames(aph3Ib)[1] <- "Contig_Name"
+
+#add in a sample ID 
+aph3Ib <- aph3Ib %>% mutate(sample_id = gsub("_.*","",Contig_Name))
+
+#create a variable to indicate directionality related to strand
+aph3Ib$direction <- ifelse(aph3Ib$Strand == "-", 0, 1)
+
+#renaming blanks to NA for value in variable Gene
+aph3Ib$Gene <- ifelse(aph3Ib$Gene == "", "NA", aph3Ib$Gene)
+
+## FACTORING TO MAKE NA LAST ON THE LIST ##
+#tablex$Gene <- factor(tablex$Gene, levels = c("aadA1","aph(3)-Ib" ,"aph(6)-Id","dfrA1","eAL","estX","intI1","istB",     "qacEdelta1","repA","spoIVCA","sul1","sul2","sulP","tniA","tniB","tnp","tnpA","tnpM","traX","xerD","yhbS","NA"))
+
+
+##GET MORE COLORS FOR THE NUMBER OF GENES
+colourCount = length(unique(aph3Ib$Gene))
+getPalette = colorRampPalette(brewer.pal(9, "Set3"))
+
+## DUMMY DATA TO ALIGN TO A SPECIFIC GENE ##
+dummies_aph3Ib <- make_alignment_dummies(
+  aph3Ib,
+  aes(xmin =Start, xmax = Stop, y = Sample_ID, id = Gene),
+  on = "aph(3'')-Ib"
+)
+
+dummies_aph3Ib$direction <- -1
+
+## FINAL PLOT ##
+aph3Ib_plot <- ggplot(aph3Ib, aes(xmin = Start, xmax = Stop, y = CSample, fill = Gene, forward = direction, label = Gene)) +
+  geom_gene_arrow() +
+  geom_gene_label(align = "left") +
+  geom_blank(data = dummies_aph3Ib) +
+  facet_wrap(~ Contig_Name, scales = "free", ncol = 1) +
+  scale_fill_manual(values = getPalette(colourCount)) +
+  theme_genes() +
+  labs(title = "aph3Ib-plot", y = "Sample") + 
+  theme(legend.position = "bottom")
+
+aph3Ib_plot
+
+```
+
+## aph6Id
+
+```{r}
+library(gggenes)
+
+## BRINGING IN A TABLE OF ALL OF THE INTEGRON ANNOTATIONS FROM BAKTA
+
+## FORMAT TABLE ##
+
+#Change first column
+colnames(aph6Id)[1] <- "Contig_Name"
+
+#add in a sample ID 
+aph6Id <- aph6Id %>% mutate(sample_id = gsub("_.*","",Contig_Name))
+
+#create a variable to indicate directionality related to strand
+aph6Id$direction <- ifelse(aph6Id$Strand == "-", 0, 1)
+
+#renaming blanks to NA for value in variable Gene
+aph6Id$Gene <- ifelse(aph6Id$Gene == "", "NA", aph6Id$Gene)
+
+## FACTORING TO MAKE NA LAST ON THE LIST ##
+#tablex$Gene <- factor(tablex$Gene, levels = c("aadA1","aph(3)-Ib" ,"aph(6)-Id","dfrA1","eAL","estX","intI1","istB",     "qacEdelta1","repA","spoIVCA","sul1","sul2","sulP","tniA","tniB","tnp","tnpA","tnpM","traX","xerD","yhbS","NA"))
+
+
+##GET MORE COLORS FOR THE NUMBER OF GENES
+colourCount = length(unique(aph6Id$Gene))
+getPalette = colorRampPalette(brewer.pal(9, "Set3"))
+
+## DUMMY DATA TO ALIGN TO A SPECIFIC GENE ##
+dummies_aph6Id <- make_alignment_dummies(
+  aph6Id,
+  aes(xmin =Start, xmax = Stop, y = Contig_Name, id = Gene),
+  on = "aph(6)-Id"
+)
+
+dummies_aph6Id$direction <- -1
+
+## FINAL PLOT ##
+aph6Id_plot <- ggplot(aph6Id, aes(xmin = Start, xmax = Stop, y = Contig_Name, fill = Gene, forward = direction, label = Gene)) +
+  geom_gene_arrow() +
+  geom_gene_label(align = "left") +
+  geom_blank(data = dummies_aph6Id) +
+  facet_wrap(~ Contig_Name, scales = "free", ncol = 1) +
+  scale_fill_manual(values = getPalette(colourCount)) +
+  theme_genes() +
+  labs(title = "aph6Id-plot", y = "Sample") + 
+  theme(legend.position = "bottom")
+
+aph6Id_plot
+
+```
+
+## BlaTEM
+
+```{r}
+library(gggenes)
+
+## BRINGING IN A TABLE OF ALL OF THE INTEGRON ANNOTATIONS FROM BAKTA
+
+## FORMAT TABLE ##
+
+#Change first column
+colnames(blaTEM1)[1] <- "Contig_Name"
+
+#add in a sample ID 
+blaTEM1 <- blaTEM1 %>% mutate(sample_id = gsub("_.*","",Contig_Name))
+
+#create a variable to indicate directionality related to strand
+blaTEM1$direction <- ifelse(blaTEM1$Strand == "-", 0, 1)
+
+#renaming blanks to NA for value in variable Gene
+blaTEM1$Gene <- ifelse(blaTEM1$Gene == "", "NA", blaTEM1$Gene)
+
+## FACTORING TO MAKE NA LAST ON THE LIST ##
+#tablex$Gene <- factor(tablex$Gene, levels = c("aadA1","aph(3)-Ib" ,"aph(6)-Id","dfrA1","eAL","estX","intI1","istB",     "qacEdelta1","repA","spoIVCA","sul1","sul2","sulP","tniA","tniB","tnp","tnpA","tnpM","traX","xerD","yhbS","NA"))
+
+
+##GET MORE COLORS FOR THE NUMBER OF GENES
+colourCount = length(unique(blaTEM1$Gene))
+getPalette = colorRampPalette(brewer.pal(9, "Set3"))
+
+## DUMMY DATA TO ALIGN TO A SPECIFIC GENE ##
+dummies_blaTEM1 <- make_alignment_dummies(
+  blaTEM1,
+  aes(xmin =Start, xmax = Stop, y = Contig_Name, id = Gene),
+  on = "blaTEM-1"
+)
+
+dummies_blaTEM1$direction <- -1
+
+## FINAL PLOT ##
+blaTEM1_plot <- ggplot(blaTEM1, aes(xmin = Start, xmax = Stop, y = Contig_Name, fill = Gene, forward = direction, label = Gene)) +
+  geom_gene_arrow() +
+  geom_gene_label(align = "left") +
+  geom_blank(data = dummies_blaTEM1) +
+  facet_wrap(~ sample_id, scales = "free", ncol = 1) +
+  scale_fill_manual(values = getPalette(colourCount)) +
+  theme_genes() +
+  labs(title = "blaTEM1-plot", y = "Sample") + 
+  theme(legend.position = "bottom")
+
+blaTEM1_plot
+
+```
+
+## cfxA6
+
+```{r}
+library(gggenes)
+
+## BRINGING IN A TABLE OF ALL OF THE INTEGRON ANNOTATIONS FROM BAKTA
+
+## FORMAT TABLE ##
+
+#Change first column
+colnames(cfxA6)[1] <- "Contig_Name"
+
+#add in a sample ID 
+cfxA6 <- cfxA6 %>% mutate(sample_id = gsub("_.*","",Contig_Name))
+
+#create a variable to indicate directionality related to strand
+cfxA6$direction <- ifelse(cfxA6$Strand == "-", 0, 1)
+
+#renaming blanks to NA for value in variable Gene
+cfxA6$Gene <- ifelse(cfxA6$Gene == "", "NA", cfxA6$Gene)
+
+## FACTORING TO MAKE NA LAST ON THE LIST ##
+#tablex$Gene <- factor(tablex$Gene, levels = c("aadA1","aph(3)-Ib" ,"aph(6)-Id","dfrA1","eAL","estX","intI1","istB",     "qacEdelta1","repA","spoIVCA","sul1","sul2","sulP","tniA","tniB","tnp","tnpA","tnpM","traX","xerD","yhbS","NA"))
+
+
+##GET MORE COLORS FOR THE NUMBER OF GENES
+colourCount = length(unique(cfxA6$Gene))
+getPalette = colorRampPalette(brewer.pal(9, "Set3"))
+
+## DUMMY DATA TO ALIGN TO A SPECIFIC GENE ##
+dummies_cfxA6 <- make_alignment_dummies(
+  cfxA6,
+  aes(xmin =Start, xmax = Stop, y = Contig_Name, id = Gene),
+  on = "cfxA6"
+)
+
+dummies_cfxA6$direction <- -1
+
+## FINAL PLOT ##
+cfxA6_plot <- ggplot(cfxA6, aes(xmin = Start, xmax = Stop, y = Contig_Name, fill = Gene, forward = direction, label = Gene)) +
+  geom_gene_arrow() +
+  geom_gene_label(align = "left") +
+  geom_blank(data = dummies_cfxA6) +
+  facet_wrap(~ sample_id, scales = "free", ncol = 1) +
+  scale_fill_manual(values = getPalette(colourCount)) +
+  theme_genes() +
+  labs(title = "cfxA6-plot", y = "Sample") + 
+  theme(legend.position = "bottom")
+
+cfxA6_plot
+
+```
+
+
+
+## dfrA1 and Figure 4
+
+```{r}
+library(gggenes)
+
+## BRINGING IN A TABLE OF ALL OF THE INTEGRON ANNOTATIONS FROM BAKTA
+
+## FORMAT TABLE ##
+
+#Change first column
+colnames(dfrA1)[1] <- "Contig_Name"
+
+#add in a sample ID 
+dfrA1 <- dfrA1 %>% mutate(sample_id = gsub("_.*","",Contig_Name))
+
+## bring in some metadata ##
+dfrA1 <- dfrA1 %>% mutate(Sample_ID2 = gsub("O","0",Sample_ID))
+dfrA1 <- left_join(dfrA1, metadata2, by = c("Sample_ID2" = "Sample_ID"))
+dfrA1 <- dfrA1 %>% mutate(vill2 = ifelse(grepl("LMR0024",Sample_ID),"Vil 5", anon_vill))
+
+#create a variable to indicate directionality related to strand
+dfrA1$direction <- ifelse(dfrA1$Strand == "-", 0, 1)
+
+#renaming blanks to NA for value in variable Gene
+dfrA1$Genes <- ifelse(dfrA1$Gene == "", "ORF", dfrA1$Gene)
+
+## FACTORING TO MAKE NA LAST ON THE LIST ##
+dfrA1$Genes <- factor(dfrA1$Gene, levels = c("aadA","aadA1","aph(3'')-Ib" ,"aph(6)-Id","dfrA1","estX","intI1","istB",     "qacEdelta1","repA","spoIVCA","sul1","sul2","sulP","tniA","tniB","tnp","tnpA","tnpM","traX","xerD","yhbS","yacA","ORF"))
+
+
+dfrA1$Sample_ID3 <- paste(dfrA1$Sample_ID2,dfrA1$vill2,sep="\n")
+
+##GET MORE COLORS FOR THE NUMBER OF GENES
+colourCount = length(unique(dfrA1$Genes))
+getPalette = colorRampPalette(brewer.pal(10, "Set3"))
+
+## DUMMY DATA TO ALIGN TO A SPECIFIC GENE ##
+dummies_dfrA1 <- make_alignment_dummies(
+  dfrA1,
+  aes(xmin =Start, xmax = Stop, y = Sample_ID3, id = Genes),
+  on = "dfrA1"
+)
+
+dummies_dfrA1$direction <- -1
+
+## FINAL PLOT ##
+dfrA1_plot <- ggplot(dfrA1, aes(xmin = Start, xmax = Stop, y = Sample_ID3, fill = Genes, forward = direction, label = Genes)) +
+  geom_gene_arrow() +
+  geom_gene_label(align = "left") +
+  geom_blank(data = dummies_dfrA1) +
+  facet_wrap(~ Sample_ID3, scales = "free", ncol = 1) +
+  scale_fill_manual(values = getPalette(colourCount)) +
+  theme_genes() +
+  labs( y = "Sample") + 
+  theme(legend.position = "bottom")
+
+dfrA1_plot
+
+ggsave("Fig4_dpi_1200.pdf", dfrA1_plot, height = 8, width = 14, dpi = 1200)
+
+```
+
+## qacEdelta1
+
+```{r}
+library(gggenes)
+
+## BRINGING IN A TABLE OF ALL OF THE INTEGRON ANNOTATIONS FROM BAKTA
+
+## FORMAT TABLE ##
+
+#Change first column
+colnames(qacEdelta1)[1] <- "Contig_Name"
+
+#add in a sample ID 
+qacEdelta1 <- qacEdelta1 %>% mutate(sample_id = gsub("_.*","",Contig_Name))
+
+#create a variable to indicate directionality related to strand
+qacEdelta1$direction <- ifelse(qacEdelta1$Strand == "-", 0, 1)
+
+#renaming blanks to NA for value in variable Gene
+qacEdelta1$Gene <- ifelse(qacEdelta1$Gene == "", "NA", qacEdelta1$Gene)
+
+## FACTORING TO MAKE NA LAST ON THE LIST ##
+#tablex$Gene <- factor(tablex$Gene, levels = c("aadA1","aph(3)-Ib" ,"aph(6)-Id","dfrA1","eAL","estX","intI1","istB",     "qacEdelta1","repA","spoIVCA","sul1","sul2","sulP","tniA","tniB","tnp","tnpA","tnpM","traX","xerD","yhbS","NA"))
+
+
+##GET MORE COLORS FOR THE NUMBER OF GENES
+colourCount = length(unique(qacEdelta1$Gene))
+getPalette = colorRampPalette(brewer.pal(9, "Set3"))
+
+## DUMMY DATA TO ALIGN TO A SPECIFIC GENE ##
+dummies_qacEdelta1 <- make_alignment_dummies(
+  qacEdelta1,
+  aes(xmin =Start, xmax = Stop, y = Contig_Name, id = Gene),
+  on = "qacEdelta1"
+)
+
+dummies_qacEdelta1$direction <- -1
+
+## FINAL PLOT ##
+qacEdelta1_plot <- ggplot(qacEdelta1, aes(xmin = Start, xmax = Stop, y = Contig_Name, fill = Gene, forward = direction, label = Gene)) +
+  geom_gene_arrow() +
+  geom_gene_label(align = "left") +
+  geom_blank(data = dummies_qacEdelta1) +
+  facet_wrap(~ sample_id, scales = "free", ncol = 1) +
+  scale_fill_manual(values = getPalette(colourCount)) +
+  theme_genes() +
+  labs(title = "qacEdelta1-plot", y = "Sample") + 
+  theme(legend.position = "bottom")
+
+qacEdelta1_plot
+
+```
+
+## sul1
+
+```{r}
+library(gggenes)
+
+## BRINGING IN A TABLE OF ALL OF THE INTEGRON ANNOTATIONS FROM BAKTA
+
+## FORMAT TABLE ##
+
+#Change first column
+colnames(sul1)[1] <- "Contig_Name"
+
+#add in a sample ID 
+sul1 <- sul1 %>% mutate(sample_id = gsub("_.*","",Contig_Name))
+
+#create a variable to indicate directionality related to strand
+sul1$direction <- ifelse(sul1$Strand == "-", 0, 1)
+
+#renaming blanks to NA for value in variable Gene
+sul1$Gene <- ifelse(sul1$Gene == "", "NA", sul1$Gene)
+
+## FACTORING TO MAKE NA LAST ON THE LIST ##
+#tablex$Gene <- factor(tablex$Gene, levels = c("aadA1","aph(3)-Ib" ,"aph(6)-Id","dfrA1","eAL","estX","intI1","istB",     "qacEdelta1","repA","spoIVCA","sul1","sul2","sulP","tniA","tniB","tnp","tnpA","tnpM","traX","xerD","yhbS","NA"))
+
+
+##GET MORE COLORS FOR THE NUMBER OF GENES
+colourCount = length(unique(sul1$Gene))
+getPalette = colorRampPalette(brewer.pal(9, "Set3"))
+
+## DUMMY DATA TO ALIGN TO A SPECIFIC GENE ##
+dummies_sul1 <- make_alignment_dummies(
+  sul1,
+  aes(xmin =Start, xmax = Stop, y = Contig_Name, id = Gene),
+  on = "sul2"
+)
+
+dummies_sul1$direction <- -1
+
+## FINAL PLOT ##
+sul1_plot <- ggplot(sul1, aes(xmin = Start, xmax = Stop, y = Contig_Name, fill = Gene, forward = direction, label = Gene)) +
+  geom_gene_arrow() +
+  geom_gene_label(align = "left") +
+  geom_blank(data = dummies_sul1) +
+  facet_wrap(~ sample_id, scales = "free", ncol = 1) +
+  scale_fill_manual(values = getPalette(colourCount)) +
+  theme_genes() +
+  labs(title = "sul1-plot", y = "Sample") + 
+  theme(legend.position = "bottom")
+
+sul1_plot
+
+```
+
+
+## TetA
+
+```{r}
+library(gggenes)
+
+## BRINGING IN A TABLE OF ALL OF THE INTEGRON ANNOTATIONS FROM BAKTA
+
+## FORMAT TABLE ##
+
+#Change first column
+colnames(tetA)[1] <- "Contig_Name"
+
+#add in a sample ID 
+tetA <- tetA %>% mutate(sample_id = gsub("_.*","",Contig_Name))
+
+#create a variable to indicate directionality related to strand
+tetA$direction <- ifelse(tetA$Strand == "-", 0, 1)
+
+#renaming blanks to NA for value in variable Gene
+tetA$Gene <- ifelse(tetA$Gene == "", "NA", tetA$Gene)
+
+## FACTORING TO MAKE NA LAST ON THE LIST ##
+#tablex$Gene <- factor(tablex$Gene, levels = c("aadA1","aph(3)-Ib" ,"aph(6)-Id","dfrA1","eAL","estX","intI1","istB",     "qacEdelta1","repA","spoIVCA","sul1","sul2","sulP","tniA","tniB","tnp","tnpA","tnpM","traX","xerD","yhbS","NA"))
+
+
+##GET MORE COLORS FOR THE NUMBER OF GENES
+colourCount = length(unique(tetA$Gene))
+getPalette = colorRampPalette(brewer.pal(9, "Set3"))
+
+## DUMMY DATA TO ALIGN TO A SPECIFIC GENE ##
+dummies_tetA <- make_alignment_dummies(
+  tetA,
+  aes(xmin =Start, xmax = Stop, y = Contig_Name, id = Gene),
+  on = "tet(A)"
+)
+
+dummies_tetA$direction <- -1
+
+## FINAL PLOT ##
+tetA_plot <- ggplot(tetA, aes(xmin = Start, xmax = Stop, y = Contig_Name, fill = Gene, forward = direction, label = Gene)) +
+  geom_gene_arrow() +
+  geom_gene_label(align = "left") +
+  geom_blank(data = dummies_tetA) +
+  facet_wrap(~ sample_id, scales = "free", ncol = 1) +
+  scale_fill_manual(values = getPalette(colourCount)) +
+  theme_genes() +
+  labs(title = "tetA-plot", y = "Sample") + 
+  theme(legend.position = "bottom")
+
+tetA_plot
+
+```
+
+## TetB
+
+```{r}
+library(gggenes)
+
+## BRINGING IN A TABLE OF ALL OF THE INTEGRON ANNOTATIONS FROM BAKTA
+
+## FORMAT TABLE ##
+
+#Change first column
+colnames(tetB)[1] <- "Contig_Name"
+
+#add in a sample ID 
+tetB <- tetB %>% mutate(sample_id = gsub("_.*","",Contig_Name))
+
+#create a variable to indicate directionality related to strand
+tetB$direction <- ifelse(tetB$Strand == "-", 0, 1)
+
+#renaming blanks to NA for value in variable Gene
+tetB$Gene <- ifelse(tetB$Gene == "", "NA", tetB$Gene)
+
+## FACTORING TO MAKE NA LAST ON THE LIST ##
+#tablex$Gene <- factor(tablex$Gene, levels = c("aadA1","aph(3)-Ib" ,"aph(6)-Id","dfrA1","eAL","estX","intI1","istB",     "qacEdelta1","repA","spoIVCA","sul1","sul2","sulP","tniA","tniB","tnp","tnpA","tnpM","traX","xerD","yhbS","NA"))
+
+
+##GET MORE COLORS FOR THE NUMBER OF GENES
+colourCount = length(unique(tetB$Gene))
+getPalette = colorRampPalette(brewer.pal(9, "Set3"))
+
+## DUMMY DATA TO ALIGN TO A SPECIFIC GENE ##
+dummies_tetB <- make_alignment_dummies(
+  tetB,
+  aes(xmin =Start, xmax = Stop, y = Contig_Name, id = Gene),
+  on = "tet(B)"
+)
+
+dummies_tetB$direction <- -1
+
+## FINAL PLOT ##
+tetB_plot <- ggplot(tetB, aes(xmin = Start, xmax = Stop, y = Contig_Name, fill = Gene, forward = direction, label = Gene)) +
+  geom_gene_arrow() +
+  geom_gene_label(align = "left") +
+  geom_blank(data = dummies_tetB) +
+  facet_wrap(~ sample_id, scales = "free", ncol = 1) +
+  scale_fill_manual(values = getPalette(colourCount)) +
+  theme_genes() +
+  labs(title = "tetB-plot", y = "Sample") + 
+  theme(legend.position = "bottom")
+
+tetB_plot
+
+```
+
+## TetO
+
+```{r}
+library(gggenes)
+
+## BRINGING IN A TABLE OF ALL OF THE INTEGRON ANNOTATIONS FROM BAKTA
+
+## FORMAT TABLE ##
+
+#Change first column
+colnames(tetO)[1] <- "Contig_Name"
+
+#add in a sample ID 
+tetO <- tetO %>% mutate(sample_id = gsub("_.*","",Contig_Name))
+
+#create a variable to indicate directionality related to strand
+tetO$direction <- ifelse(tetO$Strand == "-", 0, 1)
+
+#renaming blanks to NA for value in variable Gene
+tetO$Gene <- ifelse(tetO$Gene == "", "NA", tetO$Gene)
+
+## FACTORING TO MAKE NA LAST ON THE LIST ##
+#tablex$Gene <- factor(tablex$Gene, levels = c("aadA1","aph(3)-Ib" ,"aph(6)-Id","dfrA1","eAL","estX","intI1","istB",     "qacEdelta1","repA","spoIVCA","sul1","sul2","sulP","tniA","tniB","tnp","tnpA","tnpM","traX","xerD","yhbS","NA"))
+
+
+##GET MORE COLORS FOR THE NUMBER OF GENES
+colourCount = length(unique(tetO$Gene))
+getPalette = colorRampPalette(brewer.pal(9, "Set3"))
+
+## DUMMY DATA TO ALIGN TO A SPECIFIC GENE ##
+dummies_tetO <- make_alignment_dummies(
+  tetO,
+  aes(xmin =Start, xmax = Stop, y = Contig_Name, id = Gene),
+  on = "tet(O)"
+)
+
+dummies_tetO$direction <- -1
+
+## FINAL PLOT ##
+tetO_plot <- ggplot(tetO, aes(xmin = Start, xmax = Stop, y = Contig_Name, fill = Gene, forward = direction, label = Gene)) +
+  geom_gene_arrow() +
+  geom_gene_label(align = "left") +
+  geom_blank(data = dummies_tetO) +
+  facet_wrap(~ sample_id, scales = "free", ncol = 1) +
+  scale_fill_manual(values = getPalette(colourCount)) +
+  theme_genes() +
+  labs(title = "tetO-plot", y = "Sample") + 
+  theme(legend.position = "bottom")
+
+tetO_plot
+
+```
+
+
+## sul2
+```{r}
+library(gggenes)
+
+## BRINGING IN A TABLE OF ALL OF THE INTEGRON ANNOTATIONS FROM BAKTA
+
+## FORMAT TABLE ##
+
+#Change first column
+colnames(sul2)[1] <- "Contig_Name"
+
+#add in a sample ID 
+sul2 <- sul2 %>% mutate(sample_id = gsub("_.*","",Contig_Name))
+
+#create a variable to indicate directionality related to strand
+sul2$direction <- ifelse(sul2$Strand == "-", 0, 1)
+
+#renaming blanks to NA for value in variable Gene
+sul2$Gene <- ifelse(sul2$Gene == "", "NA", sul2$Gene)
+
+## FACTORING TO MAKE NA LAST ON THE LIST ##
+#tablex$Gene <- factor(tablex$Gene, levels = c("aadA1","aph(3)-Ib" ,"aph(6)-Id","dfrA1","eAL","estX","intI1","istB",     "qacEdelta1","repA","spoIVCA","sul1","sul2","sulP","tniA","tniB","tnp","tnpA","tnpM","traX","xerD","yhbS","NA"))
+
+
+##GET MORE COLORS FOR THE NUMBER OF GENES
+colourCount = length(unique(sul2$Gene))
+getPalette = colorRampPalette(brewer.pal(9, "Set3"))
+
+## DUMMY DATA TO ALIGN TO A SPECIFIC GENE ##
+dummies_sul2 <- make_alignment_dummies(
+  sul2,
+  aes(xmin =Start, xmax = Stop, y = Contig_Name, id = Gene),
+  on = "sul2"
+)
+
+dummies_sul2$direction <- -1
+
+## FINAL PLOT ##
+sul2_plot <- ggplot(sul2, aes(xmin = Start, xmax = Stop, y = Contig_Name, fill = Gene, forward = direction, label = Gene)) +
+  geom_gene_arrow() +
+  geom_gene_label(align = "left") +
+  geom_blank(data = dummies_sul2) +
+  facet_wrap(~ sample_id, scales = "free", ncol = 1) +
+  scale_fill_manual(values = getPalette(colourCount)) +
+  theme_genes() +
+  labs(title = "sul2-plot", y = "Sample") + 
+  theme(legend.position = "bottom")
+
+sul2_plot
+
+```
+
+
+## TetQ
+```{r}
+library(gggenes)
+
+## BRINGING IN A TABLE OF ALL OF THE INTEGRON ANNOTATIONS FROM BAKTA
+
+## FORMAT TABLE ##
+
+#Change first column
+colnames(tetQ)[1] <- "Contig_Name"
+
+#add in a sample ID 
+tetQ <- tetQ %>% mutate(sample_id = gsub("_.*","",Contig_Name))
+
+#create a variable to indicate directionality related to strand
+tetQ$direction <- ifelse(tetQ$Strand == "-", 0, 1)
+
+#renaming blanks to NA for value in variable Gene
+tetQ$Gene <- ifelse(tetQ$Gene == "", "NA", tetQ$Gene)
+
+## FACTORING TO MAKE NA LAST ON THE LIST ##
+#tablex$Gene <- factor(tablex$Gene, levels = c("aadA1","aph(3)-Ib" ,"aph(6)-Id","dfrA1","eAL","estX","intI1","istB",     "qacEdelta1","repA","spoIVCA","sul1","sul2","sulP","tniA","tniB","tnp","tnpA","tnpM","traX","xerD","yhbS","NA"))
+
+
+##GET MORE COLORS FOR THE NUMBER OF GENES
+colourCount = length(unique(tetQ$Gene))
+getPalette = colorRampPalette(brewer.pal(9, "Set3"))
+
+## DUMMY DATA TO ALIGN TO A SPECIFIC GENE ##
+dummies_tetQ <- make_alignment_dummies(
+  tetQ,
+  aes(xmin =Start, xmax = Stop, y = Contig_Name, id = Gene),
+  on = "tet(Q)"
+)
+
+dummies_tetQ$direction <- -1
+
+## FINAL PLOT ##
+tetQ_plot <- ggplot(tetQ, aes(xmin = Start, xmax = Stop, y = Contig_Name, fill = Gene, forward = direction, label = Gene)) +
+  geom_gene_arrow() +
+  geom_gene_label(align = "left") +
+  geom_blank(data = dummies_tetQ) +
+  facet_wrap(~ sample_id, scales = "free", ncol = 1) +
+  scale_fill_manual(values = getPalette(colourCount)) +
+  theme_genes() +
+  labs(title = "tetQ-plot", y = "Sample") + 
+  theme(legend.position = "bottom")
+
+tetQ_plot
+
+```
