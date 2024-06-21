@@ -16,4 +16,4 @@ Supplemental_7.csv | All vs All BLAST output of assembled antibiotic resistance 
 Supplemental_8.csv | FastQC Output after host filtering
 Supplemental_9.csv | Additional table merging lemur and human metadata
 Supplemental_accessions.csv | List of SRA accessions for the analyzed metagenomes
-refgenes.csv | The list of reference genes from NCBI's pathogen , version xxx. Contains AMR and virulence genes.
+refgenes.csv | The list of reference genes from NCBI's [Reference Gene catalog](https://www.ncbi.nlm.nih.gov/pathogens/refgene/), downloaded 2023-06-23. Contains AMR and virulence genes.
