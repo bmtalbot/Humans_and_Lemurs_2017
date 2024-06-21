@@ -5,7 +5,7 @@ output: word_document
 ---
 
 # Version of Code
-This code is maintained by Brooke M. Talbot. This is Version 1.0 updated last on 11/1/2023
+This code is maintained by Brooke M. Talbot. This is Version 2.0 updated last on 4/1/2024
 
 # R Libraries and set up ##
 These analyses were conducted using R version 4.0.4
@@ -22,6 +22,8 @@ library(vegan)
 library(cowplot)
 library(ggsignif)
 library(gggenes)
+library(ggbiplot)
+
 ```
 
 
@@ -34,12 +36,10 @@ library(gggenes)
 human_survey <- read.table("Supplemental_1.tsv", header = TRUE, sep = "\t")
 
 
-
 ## Table of all of the human and lemur records with a sample associated with them 
 
 human_and_lemurs <- read.table("Supplemental_9", 
                        header = TRUE, sep = "\t" )
-
 
 ```
 
@@ -55,11 +55,41 @@ humans_and_lemurs2 <- human_and_lemurs %>% filter(!(Sample_ID %in% excluded_samp
 
 ```
 
-## Supplemental Data 3 - Metaphlan 4 Results 
+## Supplemental Data 2 and 3 - Metaphlan 4 Results 
 ```{r}
 
-## Creates a table that is the relative abundances for each of the samples 
-all_profiled <- read.table("Supplemental_3.txt", header = T, sep = "\t")
+
+## Metaphlan analysis that pulls in the relative abundances at the Kingdom level and all of the unclassified reads (supplemental 3A). 
+
+all_profiled_k <- read.table("Supplemental_3.txt", header = T, sep = "\t")
+
+## Kingdom Counts
+
+bug_dat_4_k <- all_profiled_k
+colnames(bug_dat_4_k)[1] <- "cladeName"
+colnames(bug_dat_4_k)[2] <- "cladeTaxa"
+names(bug_dat_4_k) = gsub(pattern = "new_", replacement = "", x = names(bug_dat_4_k))
+names(bug_dat_4_k) = gsub(pattern = "_.*", replacement = "", x = names(bug_dat_4_k))
+bug_dat_4_k <- bug_dat_4_k %>% select(-cladeTaxa)
+
+
+king_dat <- bug_dat_4_k %>% 
+  #separate(clade,into=c("k", "p","c","o","f","g","s"), sep="\\|") %>%
+  filter(!grepl("\\|", cladeName )) %>% 
+  filter(!grepl("unclassified", cladeName))
+
+king_dat_T = king_dat %>% 
+  column_to_rownames("cladeName") %>% 
+  t()
+
+king_dat_T <- as.data.frame(king_dat_T)
+king_dat_T<- tibble::rownames_to_column(king_dat_T, "SampleID")
+king_dat_T <- king_dat_T %>% mutate(Source = case_when(grepl("HUM",SampleID) ~ "Human", grepl("LMR", SampleID) ~ "Lemur"))
+king_dat_T <- king_dat_T %>% filter(!(SampleID %in% excluded_samples))
+
+
+## Creates a table that is the relative abundances for each of the samples when only considering bacterial relative abundance (Supplemental 3B) 
+all_profiled <- read.table("Supplemental_2.txt", header = T, sep = "\t")
 
 # Cleans up the names
 bug_dat_4 <- all_profiled
@@ -76,24 +106,8 @@ spec_dat <- bug_dat_4 %>% filter(grepl("\\|s", cladeName)) %>%
   filter(!is.na(s)) %>%
   filter(grepl("Bacteria", k))
 
-## Kingdom Counts
-
-king_dat <- bug_dat_4 %>% 
-  #separate(clade,into=c("k", "p","c","o","f","g","s"), sep="\\|") %>%
-  filter(!grepl("\\|", cladeName )) %>% 
-  filter(!grepl("unclassified", cladeName))
-
-king_dat_T = king_dat %>% 
-  column_to_rownames("cladeName") %>% 
-  t()
-
-king_dat_T <- as.data.frame(king_dat_T)
-king_dat_T<- tibble::rownames_to_column(king_dat_T, "SampleID")
-king_dat_T <- king_dat_T %>% mutate(Source = case_when(grepl("HUM",SampleID) ~ "Human", grepl("LMR", SampleID) ~ "Lemur"))
-king_dat_T <- king_dat_T %>% filter(!(SampleID %in% excluded_samples))
 
 ## Phyla counts
-## Kingdom Counts
 
 phyla_dat <- bug_dat_4 %>% 
   separate(cladeName,into=c("k", "p","c","o","f","g","s"), sep="\\|") %>%
@@ -162,7 +176,6 @@ rownames(spec_data_t2) <- spec_data_t2[,1]
 spec_data_t2 <- subset(spec_data_t2, select = c(Total_Species_Filtered_list))
 
 
-
 ```
 
 
@@ -215,6 +228,7 @@ bacteria_kraken_table2 <- bacteria_kraken_table %>% filter(taxon_symbol == 2)
 
 
 ```
+
 ## Relative Abundance
 ```{r}
 
@@ -226,19 +240,26 @@ abundance_table <- abundance_table %>% separate(X.Template, into = c("code1", "c
 refgenes <- read.csv("~/MADAMR/refgenes.csv")
 refgenes_AMR <- refgenes %>% filter(Type == "AMR")
 
-abundance_table <- abundance_table %>% filter(code3 %in% refgenes_AMR$RefSeq.nucleotide)
-
+abundance_table <- abundance_table %>% filter(code3 %in% refgenes_AMR$RefSeq.nucleotide) %>%
+  mutate(Template_Coverage_2 = as.numeric(gsub("[^0-9.-]", "", Template_Coverage))) %>% mutate(Query_Identity_2 = as.numeric(gsub("[^0-9.-]", "", Query_Identity))) %>%
+mutate(readCount = as.numeric(readCount), .before = readCount) %>%
+  ## Filtering step for identity and hit matching
+  filter(Query_Identity_2 >= 90) %>%
+  filter(Template_Coverage_2 >= 60) %>%
+  filter(readCount >= 3)
 
 ## Write out the Final Table ## 
 #write.csv(abundance_table, "Supplemental_Table_4.csv")
 
 ```
+
 ## Supplemental Table 4 - Abundance and RPKM output
 ```{r}
 ## Uncomment to read in supplemental table 4 ##
 
-#abundance_table <- read.table("Supplemental_4.csv", header = FALSE, comment.char = "$", sep =',', fill = TRUE)
+#abundance_table <- read.table("Supplemental_Talbot_4_v2.csv", header = FALSE, comment.char = "$", sep =',', fill = TRUE)
 
+table4 <- read.table("~/Supplemental_Talbot_4_v2.csv", header = FALSE, comment.char = "$", sep =',', fill = TRUE)
 
 ```
 
@@ -287,272 +308,192 @@ AMRFinder_1000$Contig.id[duplicated(AMRFinder_1000$Contig.id)]
 
 # Results 
 
-## Table 1 - Quantification of Reads, Kingdoms, and What are the bacterial species abundances between humans and lemurs? 
+## Figure 1 Context of Read Taxa Classification
 ```{r}
-library(vegan)
-library(ggplot2)
 
-## Count number of reads per sample
-
-total_reads_paired %>% group_by(Source) %>% summarise( count = n(), mean = mean(SumReads), 
-                                              sd = sd(SumReads), 
-                                              median = median(SumReads), 
-                                              Q1 = quantile(SumReads,probs = 0.25),
-                                              Q3 = quantile(SumReads,probs = 0.75),
-                                              stderr = (sd(SumReads)/sqrt(length((SumReads)))))
-
-## Histogram to look at distribution
-hist(total_reads_paired$SumReads)
-
-## Variance test
-var.test(SumReads ~ Source, data = total_reads_paired, conf.level = 0.95)
-#There is not significant difference between the variance of the two sets of data. 
-
-# Test for normality
-#library(car)
-shapiro.test(total_reads_paired$SumReads)
-## The p value is at 0.013, which means that the data are not normally distributed
-
-# t test to compare average number of Reads
-t.test(SumReads ~ Source, data = total_reads_paired)
-wilcox.test(SumReads ~ Source, data = total_reads_paired)
-## both values are less than 0.05 suggesting there is a significant difference in the number of total reads between the two sample sets
-
-
-
-## Notably, there are more reads in the lemur dataset even after removal of potential lemur DNA
-ggplot(data = total_reads_paired, aes(x = Source, y = SumReads)) + geom_boxplot()
-
-
-## Count number of species per sample/abundance per sample
-
-spec_data_t2
-spec_data_t2<- rownames_to_column(spec_data_t2, "SAMPLE_ID")
-
-## Bar Plot of Abundances
-spec_data_t2 %>% 
-  gather("Species","Abundance",2:441) %>%
-  ggplot(aes(x = SAMPLE_ID, y = Abundance, fill = Species)) + geom_bar(stat = "identity") + 
-  theme(panel.background = element_blank(), legend.position = "none", axis.text.x = element_text(angle = 45))
-
-king_dat_T %>%
-  gather("kingdom", "abundance",2:5) %>%
-  ggplot(aes(x = Source, y = abundance, fill = kingdom )) + 
-  geom_boxplot() +
-  labs(y = "Relative Abundance", )
-  theme(panel.background = element_blank(), 
-        axis.title.x = element_text("Relative"))
-  
-  
- phyla_dat_T %>%
-  relocate(Source, .after = SampleID) %>%
-  gather("phyla", "abundance",3:16) %>%
-  ggplot(aes(x = Source, y = abundance, fill = phyla )) + 
-  geom_boxplot() +
-  labs(y = "Relative Abundance", )
-  theme(panel.background = element_blank(), 
-        axis.title.x = element_text("Relative"))
-        
-phyla_dat_T %>%
-  relocate(Source, .after = SampleID) %>%
-  gather("phyla", "abundance",3:16) %>%
-  mutate(phyla_new = gsub("p__","",phyla)) %>%
-  mutate(phyla_new = gsub("_"," ",phyla_new)) %>%
-  ggplot(aes(x = Source , y = abundance, fill = reorder(phyla_new, -abundance))) + 
-  geom_bar(stat = "identity", position = "dodge") +
-  labs(y = "Relative Abundance (Per ", fill = "Phylum") + 
-  theme(panel.background = element_blank(), 
-        axis.title.x = element_text("Relative"), 
-        axis.text.x = element_text(angle = 45))
-
-#### PRINT THIS ONE ###
-phyla_dat_T %>%
-  relocate(Source, .after = SampleID) %>%
-  gather("phyla", "abundance",3:16) %>%
-  mutate(phyla_new = gsub("p__","",phyla)) %>%
-  mutate(phyla_new = gsub("_"," ",phyla_new)) %>%
-  ggplot(aes(x = SampleID , y = abundance, group = Source, fill = reorder(phyla_new, -abundance))) + 
-  geom_bar(stat = "identity") +
-  labs(x = "Sample", y = "Relative Abundance (Percent)", fill = "Phylum") + 
+## Total reads
+Panel1 <- total_reads %>% dplyr::select(Sample, FastQC_mqc.generalstats.fastqc.total_sequences) %>% unique() %>%
+  mutate(Source = case_when(grepl("HUM",Sample)~ "Human", TRUE ~ "Lemur")) %>% ggplot(aes(x = Sample , y = FastQC_mqc.generalstats.fastqc.total_sequences, group = Source )) + 
+  geom_bar(stat = "identity") + 
+  scale_fill_brewer(palette = "Paired") + 
+  labs(y = "Total number of reads", fill = "Taxa") + 
   facet_grid(. ~ Source,  scales = "free", space = "free") +  
   theme(panel.background = element_blank(), 
-        axis.text.x = element_blank(), 
-        axis.ticks.x = element_blank())
+        axis.text.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        legend.position = "bottom",
+        legend.box = "horizontal", legend.margin=unit(-10,"cm"),
+        legend.key.size = unit(4,'mm'),
+        legend.text = element_text(size = 6.5),
+        legend.title = element_text(size = 8, angle = 90))
 
-```  
+## Total reads histogram
+moments::skewness(total_reads$FastQC_mqc.generalstats.fastqc.total_sequences %>% unique()) ## slightly skewed to the left, value is 0.69
+moments::kurtosis(total_reads$FastQC_mqc.generalstats.fastqc.total_sequences %>% unique()) ## pretty close to 3, 3.669 indicating a fairly even thickness similar to normal distribution
 
-```{r}  
-library(dplyr)
+shapiro.test(total_reads$FastQC_mqc.generalstats.fastqc.total_sequences %>% unique())
+## significant results indicate the distribution is not normally distributed
 
-## summary of human Taxon abundance ##
-king_dat_T %>%
-  gather("kingdom", "abundance",2:5) %>%
-  subset(Source == "Human") %>%
-  summary(abundance)
+xyz <- total_reads %>% unique() %>% mutate(Source = case_when(grepl("HUM",Sample)~ "Human", TRUE ~ "Lemur")) 
 
-## summary of lemur Taxon abundance ##
-king_dat_T %>%
-  gather("kingdom", "abundance",2:5) %>%
-  subset(Source == "Lemur") %>%
-  summary(abundance)
+wilcox.test(FastQC_mqc.generalstats.fastqc.total_sequences ~ Source, data = xyz)
+## p-value less than 0.05 suggesting there is a significant difference in the number of total reads between the two sample sets
 
-## Average Abundances at the kingdom taxon level
-z<- king_dat_T %>%
-  gather("kingdom", "abundance",2:5) %>%
-  group_by(Source, kingdom) %>%
-  summarise_at(vars(abundance), list(name = mean))
+## distribution
+Panel_dist <- total_reads %>% dplyr::select(Sample, FastQC_mqc.generalstats.fastqc.total_sequences) %>% unique() %>%
+  mutate(Source = case_when(grepl("HUM",Sample)~ "Human", TRUE ~ "Lemur")) %>% ggplot(aes(x =  FastQC_mqc.generalstats.fastqc.total_sequences, color = Source, fill = Source)) + 
+  scale_color_manual(values = c("#3c0d94","#eba21a")) + 
+  scale_fill_manual(values = c("#3c0d94","#eba21a")) + 
+  geom_histogram(alpha=0.5, position="identity", bins = 20 ) + 
+  labs(x = "Total reads", y = "Count") + 
+  scale_x_continuous(labels = function(x) format(x, scientific = TRUE))
 
-## Let's compare 1 by 1 the kingdom groups to one another ##
-
-bacteria <- king_dat_T %>%
-  gather("kingdom", "abundance",2:5) %>%
-  group_by(Source, kingdom) %>%
-  filter(kingdom == "k__Bacteria")
-
-bacteria %>% group_by(Source) %>% summarise( count = n(), mean = mean(abundance), 
-                                              sd = sd(abundance), 
-                                              median = median(abundance), 
-                                              Q1 = quantile(abundance,probs = 0.25),
-                                              Q3 = quantile(abundance,probs = 0.75),
-                                              stderr = (sd(abundance)/sqrt(length((abundance)))))
-
- wilcox.test(as.numeric(abundance) ~ Source, data = bacteria, exact = FALSE)
-  
-archaea <- king_dat_T %>%
-  gather("kingdom", "abundance",2:5) %>%
-  group_by(Source, kingdom) %>%
-  filter(kingdom == "k__Archaea")
-
-archaea %>% group_by(Source) %>% summarise( count = n(), mean = mean(abundance), 
-                                              sd = sd(abundance), 
-                                              median = median(abundance), 
-                                              Q1 = quantile(abundance,probs = 0.25),
-                                              Q3 = quantile(abundance,probs = 0.75),
-                                              stderr = (sd(abundance)/sqrt(length((abundance)))))
-
- wilcox.test(as.numeric(abundance) ~ Source, data = bacteria, exact = FALSE)
-  
-
-euykaryota <- bacteria <- king_dat_T %>%
-  gather("kingdom", "abundance",2:5) %>%
-  group_by(Source, kingdom) %>%
-  filter(kingdom == "k__Eukaryota")
-
-euykaryota  %>% group_by(Source) %>% summarise( count = n(), mean = mean(abundance), 
-                                              sd = sd(abundance), 
-                                              median = median(abundance), 
-                                              Q1 = quantile(abundance,probs = 0.25),
-                                              Q3 = quantile(abundance,probs = 0.75),
-                                              stderr = (sd(abundance)/sqrt(length((abundance)))))
-
-wilcox.test(as.numeric(abundance) ~ Source, data = euykaryota , exact = FALSE)
-  
-
-unclassified <- king_dat_T %>%
-  gather("kingdom", "abundance",2:5) %>%
-  group_by(Source, kingdom) %>%
-  filter(kingdom == "UNCLASSIFIED")
-
-unclassified %>% group_by(Source) %>% summarise( count = n(), mean = mean(abundance), 
-                                              sd = sd(abundance), 
-                                              median = median(abundance), 
-                                              Q1 = quantile(abundance,probs = 0.25),
-                                              Q3 = quantile(abundance,probs = 0.75),
-                                              stderr = (sd(abundance)/sqrt(length((abundance)))))
+Panel_TS <- total_reads %>% dplyr::select(Sample, FastQC_mqc.generalstats.fastqc.total_sequences) %>% unique() %>%
+  mutate(Source = case_when(grepl("HUM",Sample)~ "Human", TRUE ~ "Lemur")) %>% ggplot(aes(x = Source , y = FastQC_mqc.generalstats.fastqc.total_sequences, fill = Source )) + 
+  geom_boxplot() + 
+  labs(y = "Total number of reads", fill = "Source") + 
+scale_fill_manual(values = c("#3c0d94","#eba21a")) + 
+  geom_signif(
+   comparisons = list(c("Human", "Lemur")),
+    map_signif_level = TRUE) + 
+  theme(panel.background = element_blank(), 
+        panel.grid.major = element_line(colour = "grey89"),
+        plot.title = element_text(hjust = 0.5, face = "bold"),
+        axis.text.x = element_text(angle = 45, hjust = 0.9),
+        axis.title.x = element_blank(), 
+        legend.background = element_rect(fill = "white"), legend.position = "none", 
+        legend.key = element_rect(fill = "white")) + 
+   scale_y_continuous(labels = unit_format(unit = "M", scale = 1e-6))
 
 
-wilcox.test(as.numeric(abundance) ~ Source, data = unclassified, exact = FALSE)
+## sequence length
+
+shapiro.test(total_reads$FastQC_mqc.generalstats.fastqc.avg_sequence_length %>% unique())
+## significant results indicate the distribution is not normally distributed
+wilcox.test(FastQC_mqc.generalstats.fastqc.avg_sequence_length ~ Source, data = xyz)
+## significant difference between the average sequence length of the reads, with 
+xyz %>% group_by(Source) %>% summarize (m = median(as.numeric(FastQC_mqc.generalstats.fastqc.avg_sequence_length)), max = max(as.numeric(FastQC_mqc.generalstats.fastqc.avg_sequence_length)), min = min(as.numeric(FastQC_mqc.generalstats.fastqc.avg_sequence_length)))
 
 
-## Count number of species per sample, then get the average per sample ##
+library(scales)
+Panel_AS <- total_reads %>% dplyr::select(Sample, FastQC_mqc.generalstats.fastqc.avg_sequence_length) %>% unique() %>%
+  mutate(Source = case_when(grepl("HUM",Sample)~ "Human", TRUE ~ "Lemur")) %>% ggplot(aes(x = Source , y = FastQC_mqc.generalstats.fastqc.avg_sequence_length, fill = Source )) + 
+  geom_boxplot() + 
+  labs(y = "Average Sequence Length", fill = "Source") + 
+scale_fill_manual(values = c("#3c0d94","#eba21a")) + 
+  geom_signif(
+   comparisons = list(c("Human", "Lemur")),
+    map_signif_level = TRUE) + 
+  theme(panel.background = element_blank(), 
+        panel.grid.major = element_line(colour = "grey89"),
+        plot.title = element_text(hjust = 0.5, face = "bold"),
+        axis.text.x = element_text(angle = 45, hjust = 0.9),
+        axis.title.x = element_blank(), 
+        legend.background = element_rect(fill = "white"), legend.position = "none", 
+        legend.key = element_rect(fill = "white"))
 
-spec_data_tcount <- spec_data_t2
-rownames(spec_data_tcount) <- spec_data_tcount[,1]
-spec_data_tcount <- spec_data_tcount[,-1]
-spec_data_tcount <- as.matrix(spec_data_tcount)
-spec_data_tcount[] <- ifelse(spec_data_tcount>0,1,0)
 
-## convert back to a dataframe and summarize the number of species per sample
-spec_count <- as.data.frame(spec_data_tcount)
-spec_count <- rownames_to_column(spec_count, "Sample_ID") 
+Panel2 <- king_dat_T %>% pivot_longer(2:5, names_to = "kingdom", values_to = "abundance") %>% ggplot(aes(x = SampleID , y = abundance, group = Source, fill = kingdom)) + 
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = c("#CF8400","#75AEFF","#FFC96A","#535963"), labels = c("Archaea","Bacteria","Eukaryota","Unclassified")) + 
+  labs(y = "Relative Abundance (Percent)", fill = "Taxa") + 
+  facet_grid(. ~ Source,  scales = "free", space = "free") +  
+  theme(panel.background = element_blank(), 
+        axis.text.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        legend.position = "bottom",
+        legend.box = "horizontal", legend.margin=unit(-10,"cm"),
+        legend.key.size = unit(4,'mm'),
+        legend.text = element_text(size = 10),
+        legend.title = element_text(size = 12, angle = 90))
 
-## counts up the number of species detected for each sample ##
-spec_count <- spec_count %>% rowwise() %>%
-mutate(sumSpecies = sum(across(starts_with("s__")), na.rm = T))
-spec_count$Source <- ifelse(grepl("HUM",spec_count$Sample_ID),"Human","Lemur")
+Panel_TS
+Panel2
+Panel_AS
 
-spec_count %>% group_by(Source)  %>% summarise( count = n(), mean = mean(sumSpecies), 
-                                              sd = sd(sumSpecies), 
-                                              median = median(sumSpecies), 
-                                              Q1 = quantile(sumSpecies,probs = 0.25),
-                                              Q3 = quantile(sumSpecies,probs = 0.75),
-                                              stderr = (sd(sumSpecies)/sqrt(length((sumSpecies)))))
-wilcox.test(as.numeric(sumSpecies) ~ Source, data = spec_count, exact = FALSE)
+top <- cowplot::plot_grid(Panel_TS, Panel_AS, labels = c("a","b"))
+bottom <- cowplot::plot_grid(Panel2, labels = "c")
+Figure1resub <- cowplot::plot_grid(nrow = 2, ncol = 1, top, bottom)
 
-```
-
-## Counting species Species
-
-```{r}
-
-##use spec_data_tcount, which has already
-
-## sum the columns, and they should be = 61
-
-##Seed for M species matrix
-M_frame <- as.data.frame(M)
-rowSums(M_frame[,c(1:1319)])
-
-V <- as.data.frame(colSums(M_frame[,c(1:1319)]))
-V<- V %>% mutate(percent = (V$`colSums(M_frame[, c(1:1319)])`/68) * 100)
-
-median(V$percent)
-max(V$percent)
-
-hist(V$percent)
-
-spec_data_tcount_df <- as.data.frame(spec_data_tcount)
-species_colsum <- colSums(spec_data_tcount[,c(1:440)])
-species_row_pct <- 
-
+#ggsave("Fig1_new_resub_dpi_1200.pdf", Figure1resub, height = 8, width = 15, dpi = 1200)
 
 ```
 
 
-## Shannon diversity of the species
+## Figure 2 - Counts and Diversity Metrics of bacterial species
 
+### Phyla count
 ```{r}
-## From the Vegan package, a way to calculate the shannon and simpson diversity ## 
 
-# spec_data_t$ShannonD <- diversity(spec_count, "shannon")
-# H <- diversity()
-# simp <- diversity(BCI, "simpson")
+
+fig2A_bact <- phyla_dat_T %>%
+  relocate(Source, .after = SampleID) %>%
+  #mutate(Other_Phyla =  (100 - rowSums(.[3:16])) )+ p__Bacteria_unclassified) %>%
+  mutate(p__Other_Classified_Bacteria = p__Candidatus_Saccharibacteria + p__Deferribacteres + p__Verrucomicrobia) %>%
+  dplyr::select(-p__Candidatus_Saccharibacteria,-p__Deferribacteres,-p__Verrucomicrobia, -p__Bacteria_unclassified) %>%
+  gather("phyla", "abundance",3:13) %>%
+  mutate(phyla_new = gsub("p__","",phyla)) %>%
+  mutate(phyla_new = gsub("_"," ",phyla_new ))
+
+## Order the Legend
+fig2A_bact$phyla_new <- factor(fig2A_bact$phyla_new, levels=c('Bacteroidetes','Firmicutes','Proteobacteria','Actinobacteria','Tenericutes','Spirochaetes','Candidatus Melainabacteria','Elusimicrobia','Lentisphaerae','Fusobacteria','Other Classified Bacteria','Other Phyla'))
+
+## Panel1 plot 
+Fig2A_bact <- fig2A_bact %>% ggplot(aes(x = SampleID , y = abundance, group = Source, fill = phyla_new)) + 
+  geom_bar(stat = "identity") +
+  scale_fill_brewer(palette = "Paired") + 
+  labs(y = "Relative Abundance (Percent)", fill = "Phylum") + 
+  facet_grid(. ~ Source,  scales = "free", space = "free") +  
+  theme(panel.background = element_blank(), 
+        axis.text.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        legend.position = "bottom",
+        legend.box = "horizontal", legend.margin=unit(-2,"cm"),
+        legend.box.spacing = unit(-.25,"cm"),
+        legend.key.size = unit(4,'mm'),
+        legend.text = element_text(size = 6.5),
+        legend.title = element_text(size = 8, angle = 90))
+
+
+Fig2A_bact
+```
+
+### Alpha diversity
+```{r}
 
 MARGIN = 2
 ## Calculates the Shannon Index for Each humans
-shannon_human <- spec_data_t %>% filter(grepl("HUM",Sample_ID)) 
-human_SD <- diversity(shannon_human[,2:396])
+
+shannon_human <- spec_data_t2 %>% filter(grepl("HUM",SAMPLE_ID)) 
+rownames(shannon_human) <- shannon_human[,1]
+
+human_SD <- diversity(shannon_human[,2:length(shannon_human)])
 human <- c(rep("HUMAN",57))
 human_SD <- as.data.frame(cbind(human, human_SD))
 colnames(human_SD)[1] <- "Source"
 colnames(human_SD)[2] <- "Shannon"
 
 ## Calculates the Shannon Index for each lemur
-shannon_lemur <- spec_data_t %>% filter(grepl("LMR",Sample_ID)) 
-lemur_SD <- diversity(shannon_lemur[,2:396])
+shannon_lemur <- spec_data_t2 %>% filter(grepl("LMR",SAMPLE_ID)) 
+rownames(shannon_lemur) <- shannon_lemur[,1]
+
+lemur_SD <- diversity(shannon_lemur[,2:length(shannon_lemur)])
 lemur <- c(rep("LEMUR",11))
 lemur_SD <- as.data.frame(cbind(lemur, lemur_SD))
 colnames(lemur_SD)[1] <- "Source"
 colnames(lemur_SD)[2] <- "Shannon"
 
 species_SI <- rbind(human_SD, lemur_SD)
+species_SI <- rownames_to_column(species_SI, var = "SAMPLE_ID")
 
 ## Both are significant
 t.test(as.numeric(Shannon) ~ Source, species_SI)
 wilcox.test(as.numeric(Shannon) ~ Source, species_SI)
 
-
-ggplot(species_SI, aes(x = Source, y = as.numeric(Shannon), fill = Source)) + 
+fig2C <- ggplot(species_SI, aes(x = Source, y = as.numeric(Shannon), fill = Source)) + 
   geom_boxplot() + 
   scale_fill_manual(values = c("#3c0d94","#eba21a")) + 
   labs(x = "Source", y = "Shannon Index of Species") + 
@@ -567,44 +508,43 @@ ggplot(species_SI, aes(x = Source, y = as.numeric(Shannon), fill = Source)) +
         legend.key = element_rect(fill = "white")) 
   
 
-```
-
 ## Chao1 Diversity of the Species
-```{r}
-library(vegan)
+
 
 ##Making estimates based on the summarized counts versus the abundances?
 
+## The bottom 10% have not been filtered out for this analysis to capitalize on rare species estimates ##
 
-M_frame 
-M_frame2 <- rownames_to_column(M_frame, "SAMPLE")
-M_frame2 <- M_frame2 %>% mutate(Source = ifelse(grepl("HUM",SAMPLE),"Human","Lemur"), .after = SAMPLE)
-M_frame3 <- gather(M_frame2, "SPECIES", "COUNT",3:1321)
-M_frame4 <- M_frame3 %>% select(Source, SPECIES, COUNT) %>% group_by(Source, SPECIES) %>% summarise(SUM = sum(COUNT))
-M_frame5 <- spread(M_frame4, Source, SUM)
+M_bactf <- as.data.frame(M)
+M_bactf 
+M_bactf2 <- rownames_to_column(M_bactf, "SAMPLE")
+M_bactf2 <- M_bactf2 %>% mutate(Source = ifelse(grepl("HUM",SAMPLE),"Human","Lemur"), .after = SAMPLE)
+M_bactf3 <- gather(M_bactf2, "SPECIES", "COUNT",3:length(M_bactf2))
+M_bactf4 <- M_bactf3 %>% dplyr::select(Source, SPECIES, COUNT) %>% group_by(Source, SPECIES) %>% summarise(SUM = sum(COUNT))
+M_bactf5 <- spread(M_bactf4, Source, SUM)
 
 ## shared species ##
-table_species_overlap <- M_frame5 %>% filter(Human > 0 & Lemur > 0)
+table_species_overlap <- M_bactf5 %>% filter(Human > 0 & Lemur > 0)
 
-## among those that were detected in the >1% and among 10% of samples ##
+## among those that were detected in the >0.01% and among 10% of samples ##
 
-table_species_overlap2 <- table_species_overlap %>% filter(table_species_overlap$SPECIES %in% Total_Species_Filtered_list) 
+table_species_overlap2 <- table_species_overlap %>% filter(table_species_overlap$SPECIES %in% Total_Species_Filtered_list_bact) 
 
 ## table of species correct ##
-M_frame6 <- M_frame5 %>% filter(M_frame5$SPECIES %in% Total_Species_Filtered_list) 
+M_bactf6 <- M_bactf5 %>% filter(M_bactf5$SPECIES %in% Total_Species_Filtered_list_bact) 
 ###
-
-## The bottom 10% have not been filtered out for this analysis to capitalize on rare species estimates of Chao1 ##
 
 library(iNEXT)
 
-ChaoRichness(M_frame5[,c("Human","Lemur")])
+ChaoRichness(M_bactf5[,c("Human","Lemur")])
 
-i.out <- iNEXT(as.data.frame(M_frame5[,c("Human","Lemur")]), q=0, datatype="abundance")
+i.out <- iNEXT(as.data.frame(M_bactf5[,c("Human","Lemur")]), q=0, datatype="abundance")
+
+#i.out <- iNEXT(M_frame5[,c("Human","Lemur")], q=0, datatype="abundance")
 
 
 library(ggplot2)
-chao_rare_species <- ggiNEXT(i.out,) + 
+chao_rare_species_bact <- ggiNEXT(i.out,) + 
   scale_color_manual(values = c("#3c0d94","#eba21a")) + 
   scale_fill_manual(values = alpha(c("#3c0d94","#eba21a"), 0.5)) + 
   theme(panel.background = element_blank(), 
@@ -617,58 +557,70 @@ chao_rare_species <- ggiNEXT(i.out,) +
         legend.text = element_text(size = 8),
         legend.box = "horizontal",
         legend.key.size = unit(4,'mm'))
-
-
 ```
 
-
-## Beta Diversity of the Species
+### Beta Diversity of the Species
 ```{r}
 
-###
 spec_data_t2 <- arrange(spec_data_t2, SAMPLE_ID)
 spec_data_t2$SAMPLE_ID <- gsub("O","0",spec_data_t2$SAMPLE_ID)
 spec_mat <- spec_data_t2
 rownames(spec_mat) <- spec_mat[,1]
 spec_mat <- spec_mat[,-1]
 
-dist_mat_species = vegdist(spec_mat, binary = FALSE)
 
-cmd_res_spec = cmdscale(dist_mat_species, 
-                   k = (nrow(spec_mat) - 1),
+## Aitchison distance calculation
+
+#Calculates distance and transforms into centered log-ratio
+dist_mat_species_clr = vegdist(spec_mat, method = "aitchison", binary = FALSE, pseudocount = 1 )
+cmd_res_spec_clr = cmdscale(dist_mat_species_clr, 
+                   k = (nrow(spec_mat_clr) - 1),
                    eig = TRUE)
 
-str(cmd_res_spec)
-
-#extracting coordinates from PC
-pcoa_df_spec = tibble(PC1_spec = cmd_res_spec$points[,1], 
-                 PC2_spec = cmd_res_spec$points[,2])
-
-p_spec = ggplot(pcoa_df_spec, aes(x = PC1_spec, y = PC2_spec)) + 
-  geom_point() 
-p_spec
+str(cmd_res_spec_clr)
 
 #column binding the metadata to the plot
 ## Use Humans and Lemurs 3
 
-metadata2 <- humans_and_lemurs2 %>% select(Sample_ID, anon_vill,Sample_Type2) %>% filter(Sample_ID %in% spec_data_t2$SAMPLE_ID) %>% arrange(Sample_ID)
+metadata2 <- humans_and_lemurs2 %>% dplyr::select(Sample_ID, anon_vill,Sample_Type2) %>% filter(Sample_ID %in% spec_data_t2_bact$SAMPLE_ID) %>% arrange(Sample_ID)
 
-pcoa_meta_spec = bind_cols(pcoa_df_spec, metadata2)
-library(ggforce)
-p_vill_spec = ggplot(pcoa_meta_spec,
-                aes(x = PC1_spec, y = PC2_spec, color = anon_vill)) + 
-  geom_point() +
-  geom_mark_ellipse(aes(label = anon_vill))+
-  labs(color = "Village Source", title = "Bray-Curtis PCA Plot of Metagenome Species Abundances") +
-  scale_color_brewer(palette = "Set3") +
-  theme_classic() 
+## for the compositional figure: 
 
-p_vill_spec
+#### Biplot for PCA ####
+
+prcomp_species_clr <- prcomp(dist_mat_species_clr, center = TRUE, scale. = TRUE)
+
+##has to take an object of class "princomp"
+species_biplot <- ggbiplot::ggbiplot(prcomp_species_clr, groups = metadata2$anon_vill,
+         labels = NULL,
+         axis.title = "PC",
+         var.factor = 1.4,
+         ellipse = TRUE, ellipse.level = 0.5, ellipse.alpha = 0.1,
+         circle = FALSE, 
+         var.axes = F) +
+  labs(fill = "Source",color = "Source") +
+   scale_color_manual(values = c("#eba21a","#110063","#02000E","#7C7B7F","#93DFFD","#3c0d94","#0083B6","#1FF8FF","#007377")) + 
+  scale_fill_manual(values = c("#eba21a","#110063","#02000E","#7C7B7F","#93DFFD","#3c0d94","#0083B6","#1FF8FF","#007377")) + 
+  theme(panel.background = element_blank(), legend.position = 'right', panel.grid.major = element_line(colour = "grey89"),
+        plot.margin = unit(c(0, 0, 0, 0), "inches")) 
 
 
+### Redo of figure 1: 
 
+Fig2A
+Fig2C <- fig2C + theme(plot.margin = unit(c(0.1,1.4,0.1,1.4), "inches"))
+Fig2B <- species_biplot #p_vill_spec_clr
+Fig2D <- chao_rare_species_bact + theme(plot.margin = unit(c(0.1,0.5,0.1,0.5), "inches"))
+
+Fig2 <- cowplot::plot_grid(Fig2A_bact,Fig2B_bact,Fig1C,Fig1D, nrow = 2, ncol = 2,rel_widths = c(0.9,0.75,0.9,0), rel_heights = c(0.75,0.5,0.9,0), labels = c("a","b","c","d"))
+
+Fig2
+
+#ggsave("Fig2_dpi_1200_resubmission_biplot.pdf", Fig1_bact, height = 8, width = 15, dpi = 1200)
 ```
 
+
+## Figure 3 - Antibiotic Resistance Diversity
 
 ```{r}
 ## Average number of unique AMR alleles (?) detected from the reads alone ##
@@ -776,9 +728,6 @@ RPKM_class_sum <- RPKM_class %>% group_by(SAMPLE_ID, Class, Source) %>% summaris
 
 ## for overall
 RPKM_amrtotal_sum <- RPKM_class %>% group_by(SAMPLE_ID, Source) %>% summarise(sumTemplate = sum(template_length_kb), sumReads = sum(readCount), number_rooted_reads, RPKM = ((sum(readCount)/(sum(template_length_kb)*number_rooted_reads))*1000000000)) %>% unique()
-
-
-
 
 ```
 
@@ -1506,92 +1455,6 @@ plot_grid(pid1, shift_legend(pid2), pidflank1, shift_legend(pidflank2), labels="
 ```
 
 
-
-# Figure 1
-## Diversity of the Bacterial Species
-
-```{r}
-
-## Data set 
-fig1A <- phyla_dat_T %>%
-  relocate(Source, .after = SampleID) %>%
-  mutate(Other_Phyla =  (100 - rowSums(.[3:16])) + p__Bacteria_unclassified) %>%
-  mutate(p__Other_Classified_Bacteria = p__Candidatus_Saccharibacteria + p__Deferribacteres + p__Verrucomicrobia) %>%
-  select(-p__Candidatus_Saccharibacteria,-p__Deferribacteres,-p__Verrucomicrobia, -p__Bacteria_unclassified) %>%
-  gather("phyla", "abundance",3:14) %>%
-  mutate(phyla_new = gsub("p__","",phyla)) %>%
-  mutate(phyla_new = gsub("_"," ",phyla_new ))
-
-## Order the Legend
-fig1A$phyla_new <- factor(fig1A$phyla_new, levels=c('Bacteroidetes','Firmicutes','Proteobacteria','Actinobacteria','Tenericutes','Spirochaetes','Candidatus Melainabacteria','Elusimicrobia','Lentisphaerae','Fusobacteria','Other Classified Bacteria','Other Phyla'))
-
-## Panel1 plot 
-Fig1A <- fig1A %>% ggplot(aes(x = SampleID , y = abundance, group = Source, fill = phyla_new)) + 
-  geom_bar(stat = "identity") +
-  scale_fill_brewer(palette = "Paired") + 
-  labs(y = "Relative Abundance (Percent)", fill = "Phylum") + 
-  facet_grid(. ~ Source,  scales = "free", space = "free") +  
-  theme(panel.background = element_blank(), 
-        axis.text.x = element_blank(),
-        axis.title.x = element_blank(),
-        axis.ticks.x = element_blank(),
-        legend.position = "bottom",
-        legend.box = "horizontal", legend.margin=unit(-10,"cm"),
-        legend.key.size = unit(4,'mm'),
-        legend.text = element_text(size = 6.5),
-        legend.title = element_text(size = 8, angle = 90))
-
-
-Fig1A
-
-## B
-Fig1B <- ggplot(species_SI, aes(x = Source, y = as.numeric(Shannon), fill = Source)) + 
-  geom_boxplot() + 
-  scale_fill_manual(values = c("#3c0d94","#eba21a"), labels=c("Human","Lemur")) + 
-  scale_x_discrete(labels=c("Human","Lemur"))  + 
-  labs(x = "Source", y = "Shannon Index of Species") + 
-    geom_signif(
-   comparisons = list(c("HUMAN", "LEMUR")),
-    map_signif_level = TRUE) + 
-  theme(panel.background = element_blank(), 
-        panel.grid.major = element_line(colour = "grey89"),
-        plot.title = element_text(hjust = 0.5, face = "bold"),
-        axis.text.x = element_text(angle = 45, hjust = 0.9, size = 11),
-        legend.background = element_rect(fill = "white"), legend.position = "none", 
-        legend.key = element_rect(fill = "white")) 
-  
-library(ggforce)
-pcoa_meta_spec = bind_cols(pcoa_df_spec, metadata2)
-
-p_vill_spec = ggplot(pcoa_meta_spec,
-                aes(x = PC1_spec, y = PC2_spec, color = anon_vill)) + 
-  geom_point() +
-  geom_mark_ellipse(aes(label = anon_vill), label.fontsize = 7,
-label.buffer = unit(0, 'mm'),
-con.cap = 0) + 
-  labs(color = "Geographic Source", x= "PC1", y = "PC1") +
-  scale_color_brewer(palette = "Set3") +
-  theme(panel.background = element_blank(), 
-        axis.line = element_line())
-
-p_vill_spec
-
-Fig1C <- p_vill_spec
-
-
-Fig1D <- chao_rare_species
-
-
-
-Fig1 <- cowplot::plot_grid(Fig1A,Fig1B,Fig1C,Fig1D, nrow = 2, ncol = 2,rel_widths = c(0.9,0.75,0.9,0), rel_heights = c(0.75,0.5,0.9,0), labels = c("a","b","c","d"))
-
-Fig1
-
-ggsave("Fig1_dpi_1200.pdf", Fig1, height = 8, width = 15, dpi = 1200)
-
-
-
-```
 # Figure 2
 ## Diversity of the ARGs
 
