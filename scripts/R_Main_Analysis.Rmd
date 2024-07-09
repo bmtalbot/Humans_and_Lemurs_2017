@@ -5,7 +5,7 @@ output: word_document
 ---
 
 # Version of Code
-This code is maintained by Brooke M. Talbot. This is Version 2.0 updated last on 4/1/2024
+This code is maintained by Brooke M. Talbot. This is Version 2.0 updated last on 7/9/2024
 
 # R Libraries and set up ##
 These analyses were conducted using R version 4.0.4
@@ -257,9 +257,9 @@ mutate(readCount = as.numeric(readCount), .before = readCount) %>%
 ```{r}
 ## Uncomment to read in supplemental table 4 ##
 
-#abundance_table <- read.table("Supplemental_Talbot_4_v2.csv", header = FALSE, comment.char = "$", sep =',', fill = TRUE)
+#abundance_table <- read.table("Supplemental_4.csv", header = FALSE, comment.char = "$", sep =',', fill = TRUE)
 
-table4 <- read.table("~/Supplemental_Talbot_4_v2.csv", header = FALSE, comment.char = "$", sep =',', fill = TRUE)
+table4 <- read.table("~/Supplemental_4.csv", header = FALSE, comment.char = "$", sep =',', fill = TRUE)
 
 ```
 
@@ -360,8 +360,9 @@ scale_fill_manual(values = c("#3c0d94","#eba21a")) +
   theme(panel.background = element_blank(), 
         panel.grid.major = element_line(colour = "grey89"),
         plot.title = element_text(hjust = 0.5, face = "bold"),
-        axis.text.x = element_text(angle = 45, hjust = 0.9),
+        axis.text.x = element_text(angle = 45, hjust = 0.9, size = 11),
         axis.title.x = element_blank(), 
+        axis.title.y = element_text(size = 11),
         legend.background = element_rect(fill = "white"), legend.position = "none", 
         legend.key = element_rect(fill = "white")) + 
    scale_y_continuous(labels = unit_format(unit = "M", scale = 1e-6))
@@ -390,6 +391,7 @@ scale_fill_manual(values = c("#3c0d94","#eba21a")) +
         plot.title = element_text(hjust = 0.5, face = "bold"),
         axis.text.x = element_text(angle = 45, hjust = 0.9),
         axis.title.x = element_blank(), 
+        axis.title.y = element_text(size = 11),
         legend.background = element_rect(fill = "white"), legend.position = "none", 
         legend.key = element_rect(fill = "white"))
 
@@ -401,13 +403,14 @@ Panel2 <- king_dat_T %>% pivot_longer(2:5, names_to = "kingdom", values_to = "ab
   facet_grid(. ~ Source,  scales = "free", space = "free") +  
   theme(panel.background = element_blank(), 
         axis.text.x = element_blank(),
+        axis.title.y = element_text(size = 11),
         axis.title.x = element_blank(),
         axis.ticks.x = element_blank(),
         legend.position = "bottom",
         legend.box = "horizontal", legend.margin=unit(-10,"cm"),
         legend.key.size = unit(4,'mm'),
         legend.text = element_text(size = 10),
-        legend.title = element_text(size = 12, angle = 90))
+        legend.title = element_text(size = 12, angle = 90, hjust = 0.5))
 
 Panel_TS
 Panel2
@@ -415,9 +418,16 @@ Panel_AS
 
 top <- cowplot::plot_grid(Panel_TS, Panel_AS, labels = c("a","b"))
 bottom <- cowplot::plot_grid(Panel2, labels = "c")
-Figure1resub <- cowplot::plot_grid(nrow = 2, ncol = 1, top, bottom)
+Figure1resub <- cowplot::plot_grid(nrow = 2, ncol = 1, top, bottom, label_size = 8)
 
-#ggsave("Fig1_new_resub_dpi_1200.pdf", Figure1resub, height = 8, width = 15, dpi = 1200)
+
+ggsave("Fig1_new_resub_dpi_300.png", Figure1resub, height = 20 , width = 25, dpi = 300, units = "cm")
+
+Figure1resub
+
+ggsave("Fig1_new_resub_dpi_300.pdf", Figure1resub, height = 8 , width = 12, dpi = 300, units = "cm")
+
+
 
 ```
 
@@ -496,7 +506,7 @@ wilcox.test(as.numeric(Shannon) ~ Source, species_SI)
 fig2C <- ggplot(species_SI, aes(x = Source, y = as.numeric(Shannon), fill = Source)) + 
   geom_boxplot() + 
   scale_fill_manual(values = c("#3c0d94","#eba21a")) + 
-  labs(x = "Source", y = "Shannon Index of Species") + 
+  labs(x = "Source", y = "Shannon Index") + 
     geom_signif(
    comparisons = list(c("HUMAN", "LEMUR")),
     map_signif_level = TRUE) + 
@@ -504,6 +514,7 @@ fig2C <- ggplot(species_SI, aes(x = Source, y = as.numeric(Shannon), fill = Sour
         panel.grid.major = element_line(colour = "grey89"),
         plot.title = element_text(hjust = 0.5, face = "bold"),
         axis.text.x = element_text(angle = 45, hjust = 0.9),
+        axis.title.y = element_text(size = 8),
         legend.background = element_rect(fill = "white"), legend.position = "none", 
         legend.key = element_rect(fill = "white")) 
   
@@ -551,9 +562,9 @@ chao_rare_species_bact <- ggiNEXT(i.out,) +
         panel.grid.major = element_line(colour = "grey89"),
         plot.title = element_text(hjust = 0.5, face = "bold"),
         axis.text.x = element_text(size = 8, angle = 45, hjust = 0.9),
-        axis.text.y = element_text(size = 8),
-        axis.title.x = element_text(size = 10, hjust = 0.5),
-        axis.title.y = element_text(size = 10),
+        axis.text.y = element_text(size = 9.5),
+        axis.title.x = element_text(size = 11, hjust = 0.5),
+        axis.title.y = element_text(size = 8),
         legend.text = element_text(size = 8),
         legend.box = "horizontal",
         legend.key.size = unit(4,'mm'))
@@ -602,19 +613,27 @@ species_biplot <- ggbiplot::ggbiplot(prcomp_species_clr, groups = metadata2$anon
    scale_color_manual(values = c("#eba21a","#110063","#02000E","#7C7B7F","#93DFFD","#3c0d94","#0083B6","#1FF8FF","#007377")) + 
   scale_fill_manual(values = c("#eba21a","#110063","#02000E","#7C7B7F","#93DFFD","#3c0d94","#0083B6","#1FF8FF","#007377")) + 
   theme(panel.background = element_blank(), legend.position = 'right', panel.grid.major = element_line(colour = "grey89"),
-        plot.margin = unit(c(0, 0, 0, 0), "inches")) 
+        plot.margin = unit(c(0, 0, 0, 0), "inches"),
+        plot.background = element_rect(fill = "white")) 
 
 
 ### Redo of figure 1: 
 
-Fig2A
-Fig2C <- fig2C + theme(plot.margin = unit(c(0.1,1.4,0.1,1.4), "inches"))
+Fig2A_bact
+Fig2C <- fig2C + theme(plot.margin = unit(c(0.1,0.9,0.1,0.9), "inches"))
 Fig2B <- species_biplot #p_vill_spec_clr
 Fig2D <- chao_rare_species_bact + theme(plot.margin = unit(c(0.1,0.5,0.1,0.5), "inches"))
 
-Fig2 <- cowplot::plot_grid(Fig2A_bact,Fig2B_bact,Fig1C,Fig1D, nrow = 2, ncol = 2,rel_widths = c(0.9,0.75,0.9,0), rel_heights = c(0.75,0.5,0.9,0), labels = c("a","b","c","d"))
+##Note to the author to adjust the Fig1A
+Fig2 <- cowplot::plot_grid(Fig1A_bact,Fig2B,Fig2C,Fig2D, nrow = 2, ncol = 2,rel_widths = c(0.9,0.75,0.9,0), rel_heights = c(0.75,0.5,0.9,0), labels = c("a","b","c","d")) + theme(plot.background = element_rect(fill = "white", color = "white"))
+
+
+
+#Fig2 <- cowplot::plot_grid(Fig2A,Fig2B,Fig2C,Fig2D, nrow = 2, ncol = 2,rel_widths = c(0.9,0.75,0.9,0), rel_heights = c(0.75,0.5,0.9,0), labels = c("a","b","c","d"))
 
 Fig2
+
+ggsave("Fig2_dpi_300_resubmission_biplot_june.png", Fig2, height = 5.333, width = 10, dpi = 300)
 
 #ggsave("Fig2_dpi_1200_resubmission_biplot.pdf", Fig1_bact, height = 8, width = 15, dpi = 1200)
 ```
@@ -889,7 +908,96 @@ p_vill = ggplot(pcoa_meta,
 p_vill
 
 
+#### ggbiplot ##update this because 2 lemurs have zeros ###
+
+prcomp_arg <- prcomp(dist_mat_amr_clr, center = TRUE, scale. = TRUE)
+
+##has to take an object of class "princomp"
+arg_biplot <- ggbiplot::ggbiplot(prcomp_arg, groups = metadata2[metadata2$Sample_ID %in% rownames(amr_gene_mat2),]$anon_vill,
+         labels = NULL,
+         var.factor = 1.4,
+         ellipse = TRUE, ellipse.level = 0.5, ellipse.alpha = 0.1,
+         circle = FALSE, 
+         var.axes = F) +
+  labs(fill = "Source",color = "Source") +
+   scale_color_manual(values = c("#eba21a","#110063","#02000E","#7C7B7F","#93DFFD","#3c0d94","#0083B6","#1FF8FF","#007377")) + 
+  scale_fill_manual(values = c("#eba21a","#110063","#02000E","#7C7B7F","#93DFFD","#3c0d94","#0083B6","#1FF8FF","#007377")) + 
+  theme(panel.background = element_blank(), legend.position = 'right', panel.grid.major = element_line(colour = "grey89"), 
+  plot.margin = unit(c(0, 0, 0, 0), "inches"))
+
 ```
+
+### Figure 3 (Resubmission)
+```{r}
+
+RPKM_class_sum <- RPKM_class_resub %>% group_by(SAMPLE_ID, Class, Source) %>% summarise(sumTemplate = sum(template_length_kb), sumReads = sum(readCount), number_rooted_reads, RPKM = ((sum(readCount)/(sum(template_length_kb)*number_rooted_reads))*1000000000)) %>% unique()
+
+RPKM_percent <- RPKM_class_sum %>% ungroup() %>% 
+  dplyr::select(SAMPLE_ID, Class, RPKM) %>% 
+  spread(Class, RPKM) %>%
+  replace(is.na(.), 0) 
+RPKM_percent$Class_denom <- rowSums(RPKM_percent[,2:16])
+
+RPKM_percent_t <- RPKM_percent %>% gather(Class,"RPKM", 2:16) %>% mutate(Class_percent = (RPKM/Class_denom)*100) %>% mutate(Source = case_when(grepl("HUM",SAMPLE_ID) ~ "Human", grepl("LMR", SAMPLE_ID) ~ "Lemur")) %>%
+  ##filtering the classes where there were less than 10% of samples had at least 1% of the class
+
+mutate(class_grouped = ifelse(Class %in% c("FUCIDIC ACID","STREPTOTHRICIN","LINCOSAMIDE","PHENICOL/QUINOLONE","PLEUROMUTILIN","QUINOLONE"), "Other Class", str_to_title(Class)))
+
+
+## Relative Abundance per sample of the Antibiotic Class representation by RPKM/Total RPKM 
+Fig3A_resub <- RPKM_percent_t %>% ggplot(aes(x = SAMPLE_ID, y = Class_percent, fill = reorder(class_grouped, -Class_percent))) + geom_bar(stat = "identity") +
+  scale_fill_brewer(palette = "Paired") + 
+  labs(x = "Sample ") + 
+  labs(x = "Sample", y = "Relative Abundance", fill = "Antibiotic class") + 
+  facet_grid(. ~ Source,  scales = "free", space = "free") +  
+   theme(panel.background = element_blank(), 
+        axis.text.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        legend.position = "bottom",
+        legend.box = "horizontal", legend.margin=unit(-2,"cm"),
+        legend.box.spacing = unit(-.25,"cm"),
+        legend.key.size = unit(6,'mm'),
+        legend.text = element_text(size = 6.5),
+        legend.title = element_text(size = 8, angle = 90))
+
+
+t.test(as.numeric(Shannon) ~ Source, AMR_SI)
+wilcox.test(as.numeric(Shannon) ~ Source, AMR_SI)
+
+Fig3B_resub <- ggplot(AMR_SI, aes(x = Source, y = as.numeric(Shannon), fill = Source)) + 
+  geom_boxplot() + 
+  scale_fill_manual(values = c("#3c0d94","#eba21a")) + 
+  labs(x = "Source", y = "Shannon Index") + 
+  scale_x_discrete(labels=c("Human","Lemur")) + 
+    geom_signif(
+   comparisons = list(c("HUMAN", "LEMUR")),
+    map_signif_level = TRUE) + 
+  theme(panel.background = element_blank(), 
+        #plot.margin = unit(c(0,0,0,10),"mm"),
+        panel.grid.major = element_line(colour = "grey89"),
+        plot.title = element_text(hjust = 0.5, face = "bold"),
+        axis.text.x = element_text(angle = 45, hjust = 0.9),
+        axis.title.x = element_text(size = 11) ,
+        legend.background = element_rect(fill = "white"), legend.position = "none", 
+        legend.key = element_rect(fill = "white")) + 
+  ylim(NA,5)
+
+Fig3D_resub <- Chao_rare_AMR + theme(plot.margin = unit(c(0.1,0.5,0.1,0.5), "inches"))
+arg_biplot 
+Fig3B_resub <- Fig3B_resub + theme(plot.margin = unit(c(0.2,1.4,0.05,1.4), "inches"))
+
+Fig3_resub <- cowplot::plot_grid(Fig3A_resub,arg_biplot,Fig3B_resub,Fig3D_resub, nrow = 2, ncol = 2,rel_widths = c(0.9,0.75,0.9,0), rel_heights = c(0.75,0.5,0.9,0), labels = c("a","b","c","d")) + theme(plot.background = element_rect(fill = "white", color = "white"))
+
+Fig3_resub
+
+ggsave("Fig3_dpi_300_resub_biplot.png", Fig3_resub, height = 5.3333, width = 10, dpi = 300)
+
+```
+
+## Figure 4
+See Aldex 2 Code for Figure 4
+
 
 ## Exploratory Figures
 ```{r}
@@ -920,192 +1028,6 @@ RPKM_percent_t %>% ggplot(aes(x = SAMPLE_ID, y = Class_percent, fill = reorder(c
 
 ```
 
-## Table 2 - Create a Table For the Class Abundances compared to one another
-```{r}
-## Is the average RPKM per class different between Humans and Lemurs?)
-
-##total
-RPKM_amrtotal_sum %>% group_by(Source) %>% summarise(mean = mean(RPKM), median(RPKM), count = n(), stderr = (sd(RPKM)/sqrt(length((RPKM)))), lowrange = quantile(RPKM, 0.25), highrange = quantile(RPKM, 0.75))
-wilcox.test(RPKM ~ Source, RPKM_amrtotal_sum)
-
-
-RPKM_amrtotal_sum  %>% ggplot(aes( x = Source, y = RPKM)) +  geom_boxplot()
-
-
-
-A <- RPKM_class_sum %>% filter(Class %in% "AMINOGLYCOSIDE") %>% ungroup()
-A %>% group_by(Source) %>% summarise(mean = mean(RPKM), median = median(RPKM), count = n(), stderr = (sd(RPKM)/sqrt(length((RPKM)))),lowrange = quantile(RPKM, 0.25), highrange = quantile(RPKM, 0.75))
-wilcox.test(RPKM ~ Source, data = A)
-
-B <- RPKM_class_sum %>% filter(Class %in% "BETA-LACTAM") %>% ungroup()
-wilcox.test(RPKM ~ Source, data = B)
-
-B %>% group_by(Source) %>% summarise(mean = mean(RPKM), medain = median(RPKM), count = n(),stderr = (sd(RPKM)/sqrt(length((RPKM)))), lowrange = quantile(RPKM, 0.25), highrange = quantile(RPKM, 0.75))
-
-FOS <- RPKM_class_sum %>% filter(Class %in% "FOSFOMYCIN") %>% ungroup()
-wilcox.test(RPKM ~ Source, data = FOS)
-FOS %>% group_by(Source) %>% summarise(mean = mean(RPKM), median = median(RPKM), count = n(),stderr = (sd(RPKM)/sqrt(length((RPKM)))), lowrange = quantile(RPKM, 0.25), highrange = quantile(RPKM, 0.75))
-
-FUS <- A <- RPKM_class_sum %>% filter(Class %in% "FUSIDIC ACID") %>% ungroup()
-#wilcox.test(RPKM ~ Source, data = FUS)
-FUS %>% group_by(Source) %>% summarise(mean = mean(RPKM), count = n(), stderr = (sd(RPKM)/sqrt(length((RPKM)))))
-
-GLY <- A <- RPKM_class_sum %>% filter(Class %in% "GLYCOPEPTIDE") %>% ungroup()
-wilcox.test(RPKM ~ Source, data = GLY)
-GLY %>% group_by(Source) %>% summarise(mean = mean(RPKM), count = n(), stderr = (sd(RPKM)/sqrt(length((RPKM)))))
-
-LS <- RPKM_class_sum %>% filter(Class %in% "LINCOSAMIDE/STREPTOGRAMIN") %>% ungroup()
-wilcox.test(RPKM ~ Source, data = LS) 
-LS %>% group_by(Source) %>% summarise(mean = mean(RPKM), median = median(RPKM), count = n(), stderr = (sd(RPKM)/sqrt(length((RPKM)))), lowrange = quantile(RPKM, 0.25), highrange = quantile(RPKM, 0.75))
-
-Ma <- RPKM_class_sum %>% filter(Class %in% "MACROLIDE") %>% ungroup()
-wilcox.test(RPKM ~ Source, data = Ma) 
-Ma %>% group_by(Source) %>% summarise(mean = mean(RPKM), median = median(RPKM), count = n(),stderr = (sd(RPKM)/sqrt(length((RPKM)))), lowrange = quantile(RPKM, 0.25), highrange = quantile(RPKM, 0.75))
-
-PH <- RPKM_class_sum %>% filter(Class %in% "PHENICOL") %>% ungroup()
-wilcox.test(RPKM ~ Source, data = PH) 
-PH %>% group_by(Source) %>% summarise(mean = mean(RPKM), median = median(RPKM), count = n(), stderr = (sd(RPKM)/sqrt(length((RPKM)))), lowrange = quantile(RPKM, 0.25), highrange = quantile(RPKM, 0.75))
-
-PQ <- RPKM_class_sum %>% filter(Class %in% "PHENICOL/QUINOLONE") %>% ungroup()
-#wilcox.test(RPKM ~ Source, data = PQ) 
-PQ %>% group_by(Source) %>% summarise(mean = mean(RPKM), count = n())
-
-PL <- RPKM_class_sum %>% filter(Class %in% "PLEUROMUTILIN") %>% ungroup()
-#wilcox.test(RPKM ~ Source, data = PL) 
-PL %>% group_by(Source) %>% summarise(mean = mean(RPKM), count = n())
-
-QU <- RPKM_class_sum %>% filter(Class %in% "QUINOLONE") %>% ungroup()
-#wilcox.test(RPKM ~ Source, data = PL) 
-
-QU %>% group_by(Source) %>% summarise(mean = mean(RPKM), count = n())
-
-
-STR <- RPKM_class_sum %>% filter(Class %in% "STREPTOTHRICIN") %>% ungroup()
-#wilcox.test(RPKM ~ Source, data = STR) 
-STR %>% group_by(Source) %>% summarise(mean = mean(RPKM), count = n())
-
-SUL <- RPKM_class_sum %>% filter(Class %in% "SULFONAMIDE") %>% ungroup()
-wilcox.test(RPKM ~ Source, data = SUL) 
-SUL %>% group_by(Source) %>% summarise(mean = mean(RPKM), median = median(RPKM), count = n(),stderr = (sd(RPKM)/sqrt(length((RPKM)))), lowrange = quantile(RPKM, 0.25), highrange = quantile(RPKM, 0.75))
-
-TET <- RPKM_class_sum %>% filter(Class %in% "TETRACYCLINE") %>% ungroup()
-wilcox.test(RPKM ~ Source, data = TET)
-TET %>% group_by(Source) %>% summarise(mean = mean(RPKM), median = median(RPKM), count = n(),stderr = (sd(RPKM)/sqrt(length((RPKM)))), lowrange = quantile(RPKM, 0.25), highrange = quantile(RPKM, 0.75))
-
-
-TRI <- RPKM_class_sum %>% filter(Class %in% "TRIMETHOPRIM") %>% ungroup()
-wilcox.test(RPKM ~ Source, data = TRI) 
-TRI %>% group_by(Source) %>% summarise(mean = mean(RPKM), median = median(RPKM), count = n(),stderr = (sd(RPKM)/sqrt(length((RPKM)))), lowrange = quantile(RPKM, 0.25), highrange = quantile(RPKM, 0.75))
-
-
-```
-
-
-## Table 3 - Do humans with a recent PCR + for a bacterial infection have higher burden of antibiotic resistance genes?
-```{r}
-
-
-##What we can do is look at the abundance of the different alleles, and look at the alpha and beta 
-## Link the epi data to the bacterial data, and indicate PCR Positivity
-
-
-RPKM$SAMPLE_ID2 <- sub("O","0",RPKM$SAMPLE_ID)
-RPKM_meta <- left_join(RPKM, human_survey, by = c("SAMPLE_ID2" = "Sample_ID"))  
-RPKM_meta <- RPKM_meta %>% mutate(PCR_pos = ifelse(Pathogen1+Pathogen2+Pathogen3+Pathogen4 >0,1,0)) %>%
-              mutate(PCR_sum = Pathogen1 + Pathogen2 + Pathogen3 + Pathogen4)
-RPKM_meta <- RPKM_meta %>% filter(Source == "Human")
-
-## Making a dataset that include the samples which did not ultimately have any AMR detected, but were still analyzed. 
-
-RPKM_meta_and_no_hits <- left_join(humans_and_lemurs2, RPKM, by = c("Sample_ID" = "SAMPLE_ID2")) %>%
-  mutate(RPKM_adjusted = ifelse(is.na(RPKM), 0, RPKM))
-RPKM_meta_and_no_hits2 <- left_join(RPKM_meta_and_no_hits, (human_survey %>% select(2,6:23)),by = "Sample_ID")
-
-RPKM_meta_and_no_hits_humans <- RPKM_meta_and_no_hits2 %>% filter(Sample_Type2 %in% "HUMAN") %>% mutate(PCR_pos = ifelse(Pathogen1+Pathogen2+Pathogen3+Pathogen4 >0,1,0)) %>%
-              mutate(PCR_sum = Pathogen1 + Pathogen2 + Pathogen3 + Pathogen4)
-
-## Logistic regressions 
-
-## Possible factors to control for: 1. Village, 2. Actively have diarrhea, 3. type of pathogen, 4. how many PCR positive pathogens 
-
-## Raw comparison before controlling for additional factors ** nead to look into this
-model <- glm(PCR_pos ~ RPKM_adjusted, data = RPKM_meta_and_no_hits_humans, family = "binomial")
-summary(model)
-
-##Is there a difference in average RPKM between those with a PCR positive, and those without?
-## Variance test
-var.test(RPKM_adjusted ~ PCR_pos, data = RPKM_meta_and_no_hits_humans, conf.level = 0.95)
-#There is a significant difference between the variance of the two sets of data. 
-
-# Test for normality
-shapiro.test(RPKM_meta_and_no_hits_humans$RPKM_adjusted)
-## The p value is <0.01, which means that this distribution is not normally distributed. Consider a wilcoxon rank sum test for comparison
-wilcox.test(RPKM_adjusted ~ PCR_pos, RPKM_meta_and_no_hits_humans)
-## The P value is not significant and suggests that raw, there is non significant difference between the average RPKM between those with and without a PCR positive result
-
-ggplot(RPKM_meta_and_no_hits_humans, aes(x = as.factor(PCR_pos), y = RPKM_adjusted)) + geom_boxplot()
-
-## I don't think the data set is large enought to detect a statistical pattern across the villages 
-ggplot(RPKM_meta_and_no_hits_humans, aes(x = as.factor(PCR_pos), y = RPKM_adjusted, color = anon_vill)) + geom_boxplot()
-
-```
-
-## Table 3 - What factors might be associated with higher RPKM
-```{r}
-
-## Total average
-mean(RPKM_meta_and_no_hits_humans$RPKM_adjusted)
-sd(RPKM_meta_and_no_hits_humans$RPKM_adjusted)/sqrt(length((RPKM_meta_and_no_hits_humans$RPKM_adjusted)))
-
-## Village
-rpkmFact_Village <- RPKM_meta_and_no_hits_humans %>% group_by(anon_vill ) %>% summarise(mean = mean(RPKM_adjusted), count = n(), sd = sd(RPKM_adjusted), stderr = (sd(RPKM_adjusted)/sqrt(length((RPKM_adjusted)))))
-
-kruskal.test(RPKM_adjusted ~ anon_vill, RPKM_meta_and_no_hits_humans)
-
-
-##Age Group
-rpkmFact_ageGroup<- RPKM_meta_and_no_hits_humans %>% mutate(ageGroup = case_when(Age < 5 ~ "Under 5", Age >= 5 & Age <10 ~ "Age 5-9", Age >= 10 & Age < 18 ~ "Age 10-17", Age >= 18 & Age <30 ~ "Age 18 - 29", Age >= 30 & Age <40 ~ "Age 30-39", Age >= 40 & Age < 50 ~ "Age 40-49", Age >= 50 ~ "Age 50+")) %>% group_by(ageGroup) %>% summarise(mean = mean(RPKM_adjusted), count = n(), sd = sd(RPKM_adjusted), stderr = (sd(RPKM_adjusted)/sqrt(length((RPKM_adjusted)))))
-
-RPKM_meta_and_no_hits_humans <-  RPKM_meta_and_no_hits_humans %>% mutate(ageGroup = case_when(Age < 5 ~ "Under 5", Age >= 5 & Age <10 ~ "Age 5-9", Age >= 10 & Age < 18 ~ "Age 10-17", Age >= 18 & Age <30 ~ "Age 18 - 29", Age >= 30 & Age <40 ~ "Age 30-39", Age >= 40 & Age < 50 ~ "Age 40-49", Age >= 50 ~ "Age 50+")) 
-
-kruskal.test(RPKM_adjusted ~ ageGroup, RPKM_meta_and_no_hits_humans)
-
-
-## PCR Positivity
-rpkmFact_PCRpos <- RPKM_meta_and_no_hits_humans %>% group_by(PCR_pos) %>% summarise(mean = mean(RPKM_adjusted), count = n(), sd = sd(RPKM_adjusted), stderr = (sd(RPKM_adjusted)/sqrt(length((RPKM_adjusted)))))
-
-wilcox.test(RPKM_adjusted ~ PCR_pos, RPKM_meta_and_no_hits_humans)
-
-## Pathogen Dx
-rpkmFact_PathogenSum <- RPKM_meta_and_no_hits_humans %>%
-mutate(PathSum = case_when(PCR_sum == 0 ~ "0", PCR_sum == 1~ "1", PCR_sum >= 2 ~"2+")) %>%
-  group_by(PathSum) %>% summarise(mean = mean(RPKM_adjusted), count = n(), sd = sd(RPKM_adjusted), stderr = (sd(RPKM_adjusted)/sqrt(length((RPKM_adjusted)))))
-
-XX <- RPKM_meta_and_no_hits_humans %>%
-mutate(PathSum = case_when(PCR_sum == 0 ~ "0", PCR_sum == 1~ "1", PCR_sum >= 2 ~"2+"), )
-
-  kruskal.test(RPKM_adjusted ~ PathSum, XX)
-
-##Sex
-rpkmFact_Sex <- RPKM_meta_and_no_hits_humans %>% group_by(sex) %>% summarise(mean = mean(RPKM_adjusted), count = n(), sd = sd(RPKM_adjusted), stderr = (sd(RPKM_adjusted)/sqrt(length((RPKM_adjusted)))))
-wilcox.test(RPKM_adjusted ~ sex, RPKM_meta_and_no_hits_humans)
-
-
-
-## Contact Wild Lemurs
-rpkmFact_wildlemurs <- RPKM_meta_and_no_hits_humans %>% group_by(contact_wild_lemurs) %>% summarise(mean = mean(RPKM_adjusted), count = n(), sd = sd(RPKM_adjusted), stderr = (sd(RPKM_adjusted)/sqrt(length((RPKM_adjusted)))))
-
-wilcox.test(RPKM_adjusted ~ contact_wild_lemurs, RPKM_meta_and_no_hits_humans)
-
-
-## Keep Domesticated Animals
-rpkmFact_domAnimals <- RPKM_meta_and_no_hits_humans %>% group_by(keep_dom_animals) %>% summarise(mean = mean(RPKM_adjusted), count = n(), sd = sd(RPKM_adjusted),stderr = (sd(RPKM_adjusted)/sqrt(length((RPKM_adjusted)))))
-
-wilcox.test(RPKM_adjusted ~ keep_dom_animals, RPKM_meta_and_no_hits_humans)
-
-
-```
-
 
 #Antibiotic Resistance Genes Structure and Similarity
 
@@ -1127,7 +1049,6 @@ amr_genes_overlap_ll <- AMRFinder_1000 %>% filter(AMRFinder_1000$Gene.symbol %in
 
 ## prints a line list of all of the sample names 
 print(cat(unique(amr_genes_overlap_ll$Sample_ID_match),sep = "\n"), quote = FALSE)
-
 
 ```
 
@@ -1163,8 +1084,6 @@ tetQ <- bakta_results %>% filter(X.Sequence.Id %in% bakta_results$X.Sequence.Id[
 
 ## prints a line list of all of the contigs
 amr_contigs <- print(cat(unique(amr_genes_overlap_ll$Contig.id),sep = "\n"), quote = FALSE)
-
-
 
 ```
 
@@ -1370,13 +1289,6 @@ pidflank2 <- ggplot(data = blastedflanks_filtered4, aes(x = pair, y = Perc_ID, c
 
 plot_grid(pidflank1, shift_legend(pidflank2), labels="AUTO")
 
-
-## Figure 3?
-plot_grid(pid1, shift_legend(pid2), pidflank1, shift_legend(pidflank2), labels="auto")
-
-
-
-
 ```
 
 ```{r}
@@ -1445,81 +1357,30 @@ shift_legend <- function(p){
 
 
 
+### Other more stable function for extracting the legend:
+shift_legend3 <- function(p) {
+    pnls <- cowplot::plot_to_gtable(p) %>% gtable::gtable_filter("panel") %>%
+      with(setNames(grobs, layout$name)) %>% purrr::keep(~identical(.x,zeroGrob()))
+
+    if( length(pnls) == 0 ) stop( "No empty facets in the plot" )
+
+    lemon::reposition_legend( p, "center", panel=names(pnls) )
+}
+
+## From stack overflow ##
+
 ```
 
-## Figure 3
+## Figure 5
 ```{r}
 
-plot_grid(pid1, shift_legend(pid2), pidflank1, shift_legend(pidflank2), labels="auto")
+Fig5_resub <- plot_grid(pid1, shift_legend3(pid2), pidflank1, shift_legend3(pidflank2), labels="auto")
+
+ggsave("Fig5_dpi_300.pdf", Fig5_resub, height = 5.3333, width = 10, dpi = 300)
+
+ggsave("Fig5_dpi_300.png", Fig5_resub, height = 7, width = 10, dpi = 300)
 
 ```
-
-
-# Figure 2
-## Diversity of the ARGs
-
-```{r}
-
-## Relative Abundance per sample of the Antibiotic Class representation by RPKM/Total RPKM 
-Fig2A <- RPKM_percent_t %>% ggplot(aes(x = SAMPLE_ID, y = Class_percent, fill = reorder(class_grouped, -Class_percent))) + geom_bar(stat = "identity") +
-  scale_fill_brewer(palette = "Paired") + 
-  labs(x = "Sample ") + 
-  labs(x = "Sample", y = "Relative Abundance (Percent)", fill = "Antibiotic class") + 
-  facet_grid(. ~ Source,  scales = "free", space = "free") +  
-   theme(panel.background = element_blank(), 
-        axis.text.x = element_blank(),
-        axis.title.x = element_blank(),
-        axis.ticks.x = element_blank(),
-        legend.position = "bottom",
-        legend.box = "horizontal", legend.margin=unit(-10,"cm"),
-        legend.key.size = unit(6,'mm'),
-        legend.text = element_text(size = 6.5),
-        legend.title = element_text(size = 8, angle = 90))
-
-
-
-t.test(as.numeric(Shannon) ~ Source, AMR_SI)
-wilcox.test(as.numeric(Shannon) ~ Source, AMR_SI)
-
-Fig2B <- ggplot(AMR_SI, aes(x = Source, y = as.numeric(Shannon), fill = Source)) + 
-  geom_boxplot() + 
-  scale_fill_manual(values = c("#3c0d94","#eba21a")) + 
-  labs(x = "Source", y = "Shannon Index") + 
-  scale_x_discrete(labels=c("Human","Lemur")) + 
-    geom_signif(
-   comparisons = list(c("HUMAN", "LEMUR")),
-    map_signif_level = TRUE) + 
-  theme(panel.background = element_blank(), 
-        plot.margin = unit(c(0,0,0,10),"mm"),
-        panel.grid.major = element_line(colour = "grey89"),
-        plot.title = element_text(hjust = 0.5, face = "bold"),
-        axis.text.x = element_text(angle = 45, hjust = 0.9),
-        legend.background = element_rect(fill = "white"), legend.position = "none", 
-        legend.key = element_rect(fill = "white")) 
-
-Fig2C <- ggplot(pcoa_meta,
-                aes(x = PC1, y = PC2, color = anon_vill)) + 
-  labs(x= "PC1", y = "PC1") + 
-  geom_point() +
-  scale_color_brewer(palette = "Set3") +
-geom_mark_ellipse(aes(label = anon_vill), label.fontsize = 7,
-label.buffer = unit(0, 'mm'),
-con.cap = 0) + 
-  labs(color = "Geographic Source") +
-  theme(panel.background = element_blank(), 
-        axis.line = element_line())
-
-Fig2D <- Chao_rare_AMR
-
-
-Fig2 <- cowplot::plot_grid(Fig2A,Fig2B,Fig2C,Fig2D, nrow = 2, ncol = 2,rel_widths = c(0.9,0.75,0.9,0), rel_heights = c(0.75,0.5,0.9,0), labels = c("a","b","c","d"))
-
-Fig2
-
-ggsave("Fig2_dpi_1200.pdf", Fig2, height = 8, width = 15, dpi = 1200)
-
-```
-
 
 
 # Among shared ARGs, is there evidence of a commone MGE? What is the synteny of all of the AMR Genes?
@@ -1789,7 +1650,10 @@ cfxA6_plot
 
 
 
-## dfrA1 and Figure 4
+## Figure 6 and dfrA1
+
+
+## dfrA1
 
 ```{r}
 library(gggenes)
@@ -1808,49 +1672,90 @@ dfrA1 <- dfrA1 %>% mutate(sample_id = gsub("_.*","",Contig_Name))
 dfrA1 <- dfrA1 %>% mutate(Sample_ID2 = gsub("O","0",Sample_ID))
 dfrA1 <- left_join(dfrA1, metadata2, by = c("Sample_ID2" = "Sample_ID"))
 dfrA1 <- dfrA1 %>% mutate(vill2 = ifelse(grepl("LMR0024",Sample_ID),"Vil 5", anon_vill))
+dfrA1$Coverage <- as.numeric(dfrA1$Coverage)
+
 
 #create a variable to indicate directionality related to strand
 dfrA1$direction <- ifelse(dfrA1$Strand == "-", 0, 1)
 
-#renaming blanks to NA for value in variable Gene
-dfrA1$Genes <- ifelse(dfrA1$Gene == "", "ORF", dfrA1$Gene)
+#renaming blanks to fill in functional gaps for value in variable Gene
+dfrA1$Genes <- case_when(grepl("aminoglycoside riboswitch",dfrA1$Product) ~ "attI riboswitch",
+grepl("Transcriptional regulator",dfrA1$Product) ~ "transcript regulator",
+grepl("Streptomycin 3''-O-adenylyltransferase",dfrA1$Product) & dfrA1$Gene == "" ~ "Streptomycin adenyltransferase gene",
+grepl("hypothetical|Uncharacterized|DUF1240 domain-containing protein|MLTR-LBD domain-containing protein",dfrA1$Product) ~ "uncharacterized ORF",
+grepl("UspA",dfrA1$Product) ~ "UspA gene", 
+grepl("transposase",dfrA1$Product) ~ "transposase gene",
+grepl("Aerotaxis", dfrA1$Product) ~ "chemotaxis gene",
+grepl("regulatory region of the repBA gene",dfrA1$Product) ~ "repBA regulator",
+grepl("N-acetyltransferase",dfrA1$Product) & dfrA1$Gene == "" ~ "Other acetyltransferase gene",
+grepl("Replication protein C",dfrA1$Product) ~ "replication gene",
+grepl("DUF2523 domain-containing protein",dfrA1$Product) ~ "Exosortase gene", 
+grepl("Transposase",dfrA1$Product) ~ "transposase gene",
+grepl("Diguanylate cyclase",dfrA1$Product) ~ "Diguanylate cyclase gene",
+grepl("Replication initiation",dfrA1$Product) ~ "Replication initiation gene",
+grepl("EAL domain-containing protein",dfrA1$Product) ~ "EAL domain gene", 
+TRUE ~ dfrA1$Gene)
+
+#dfrA1$Genes <- ifelse(dfrA1$Gene == "", "ORF", dfrA1$Gene)
 
 ## FACTORING TO MAKE NA LAST ON THE LIST ##
-dfrA1$Genes <- factor(dfrA1$Gene, levels = c("aadA","aadA1","aph(3'')-Ib" ,"aph(6)-Id","dfrA1","estX","intI1","istB",     "qacEdelta1","repA","spoIVCA","sul1","sul2","sulP","tniA","tniB","tnp","tnpA","tnpM","traX","xerD","yhbS","yacA","ORF"))
+#dfrA1$Genes <- factor(dfrA1$Gene, levels = c("aadA","aadA1","aph(3'')-Ib" ,"aph(6)-Id","dfrA1","estX","intI1","istB",     "qacEdelta1","repA","spoIVCA","sul1","sul2","sulP","tniA","tniB","tnp","tnpA","tnpM","traX","xerD","yhbS","yacA","Unknown ORF"))
 
+dfrA1$Genes <- factor(dfrA1$Genes, levels = c("aadA","aadA1","aph(3'')-Ib","aph(6)-Id","chemotaxis gene","dfrA1","Diguanylate cyclase gene","EAL domain gene","estX","Exosortase gene","intI1","istB","Other acetyltransferase gene","qacEdelta1", "repA", "repBA regulator","replication gene","Replication initiation gene","attI riboswitch","spoIVCA","Streptomycin adenyltransferase gene","sul1","sul2","sulP","tniA","tniB","tnpM","transcript regulator","transposase gene","traX","UspA gene","xerD","yacA","yhbS","uncharacterized ORF" ))
+
+## Creating a color scheme that can help understand the genes present on more than one contig without having a complex legend
+shared_contig_genes <- dfrA1 %>% dplyr::select(Contig_Name, Gene, Genes) %>% unique()
+table(shared_contig_genes$Genes)
+
+dfrA1$genehighlights <- case_when(dfrA1$Genes %in% c("yhbS","tnpM","tniB","tniA","sulP","sul2","sul1","intI1","estX","dfrA1","aadA1","aadA","attI riboswitch","UspA gene","xerD","qacEedelta1","aph(6)-Id","aph(3'')-Ib") ~ dfrA1$Genes, TRUE ~ "Other")
+
+dfrA1$genehighlights <- factor(dfrA1$genehighlights, levels = c("yhbS","tnpM","tniB","tniA","sulP","sul2","sul1","intI1","estX","dfrA1","aadA1","aadA","Streptomycin adenyltransferase gene","riboswitch gene","UspA gene","xerD","qacEedelta1","aph(6)-Id","aph(3'')-Ib", "Other"))
 
 dfrA1$Sample_ID3 <- paste(dfrA1$Sample_ID2,dfrA1$vill2,sep="\n")
 
+library(pals)
 ##GET MORE COLORS FOR THE NUMBER OF GENES
-colourCount = length(unique(dfrA1$Genes))
-getPalette = colorRampPalette(brewer.pal(10, "Set3"))
+colourCount = length(unique(dfrA1$genehighlights))
+#getPalette = colorRampPalette(brewer.pal(10, "Set3"))
+palette <- polychrome(n=colourCount)
 
 ## DUMMY DATA TO ALIGN TO A SPECIFIC GENE ##
 dummies_dfrA1 <- make_alignment_dummies(
   dfrA1,
-  aes(xmin =Start, xmax = Stop, y = Sample_ID3, id = Genes),
-  on = "dfrA1"
+  aes(xmin =Start, xmax = Stop, y = Sample_ID3, id = genehighlights),
+  on = "dfrA1",side = "right"
 )
 
 dummies_dfrA1$direction <- -1
 
+
 ## FINAL PLOT ##
-dfrA1_plot <- ggplot(dfrA1, aes(xmin = Start, xmax = Stop, y = Sample_ID3, fill = Genes, forward = direction, label = Genes)) +
+dfrA1_plot <- ggplot(dfrA1[dfrA1$Type %in% c("cds","sorf"),], aes(xmin = Start, xmax = Stop, y = Sample_ID3, forward = direction, fill = genehighlights, label = genehighlights)) +
+    geom_feature(
+    data =dfrA1[!(dfrA1$Type %in% c("cds","sorf")),] ,
+    aes(x = Start, y = Sample_ID3)
+  ) +
+  geom_feature_label(
+    data = dfrA1[!(dfrA1$Type %in% c("cds","sorf")),],
+    aes(x = Start, y = Sample_ID3, label = Genes), size = 14
+  ) + 
   geom_gene_arrow() +
   geom_gene_label(align = "left") +
   geom_blank(data = dummies_dfrA1) +
   facet_wrap(~ Sample_ID3, scales = "free", ncol = 1) +
-  scale_fill_manual(values = getPalette(colourCount)) +
+  scale_fill_manual(values = as.vector(palette)) +
   theme_genes() +
-  labs( y = "Sample") + 
+  labs( y = "Sample", fill = "Genes") + 
   theme(legend.position = "bottom")
 
 dfrA1_plot
 
-ggsave("Fig4_dpi_1200.pdf", dfrA1_plot, height = 8, width = 14, dpi = 1200)
+ggsave("Fig6_dpi_300_v2.pdf", dfrA1_plot, height = 8, width = 14, dpi = 300)
+
+
+ggsave("Fig6_dpi_300_v2.png", dfrA1_plot, height = 7, width = 10, dpi = 300)
 
 ```
-
 ## qacEdelta1
 
 ```{r}
