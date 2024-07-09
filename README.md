@@ -1,5 +1,8 @@
 # Humans_and_Lemurs_2017
-This Repo contains scripts necessary to analyse and reproduced data for the Human and Lemur Metagenome ARG study
+This Repo contains scripts necessary to analyse and reproduced data for the Human and Lemur Metagenome ARG study; 
+
+This code was written and results originally published in the accepted manuscript for PeerJ, "Metagenome-wide characterization of shared antimicrobial resistance genes in sympatric people and lemurs in rural Madagascar"
+
 
 # Explanation of tables 
 Tables are published under Version 2.0 on Zenodo [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.10402843.svg)](https://doi.org/10.5281/zenodo.10402843)
